@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LuCamera, LuMic, LuRepeat, LuTriangleAlert, LuArrowDown, LuSparkles } from 'react-icons/lu';
-import type { Tx } from '../engine';
-import { findDuplicate, fmt, parseSentence, suggestCategory, toISODate } from '../engine';
+import type { Attachment, Tx } from '../engine';
+import { findDuplicate, fmt, fmtN, lockCheck, parseSentence, suggestCategory, toISODate } from '../engine';
+import { AttachmentsField, LockedNotice } from './PaySheet';
+import { addAttachmentFromDataUrl, removeAttachment } from '../services/files';
 import type { Store } from '../store';
 import { Btn, Label, Money, Segmented, Sheet, cx, inputCls } from '../ui';
 import { Glyph } from '../icons';
@@ -12,11 +14,11 @@ export type AddMode = 'expense' | 'income' | 'transfer';
 const PAY_TO_WALLET: Record<string, string> = { cash: 'w_cash', wave: 'w_wave', orange: 'w_om', mtn: 'w_mtn', moov: 'w_moov', card: 'w_bank', bank: 'w_bank' };
 
 export function AddSheet({
-  open, onClose, store, initialMode = 'expense', initialDate, autoScan, onSaved, initialAmount, initialCategory,
+  open, onClose: close0, store, initialMode = 'expense', initialDate, autoScan, onSaved, initialAmount, initialCategory, onUnlock,
 }: {
   open: boolean; onClose: () => void; store: Store; initialMode?: AddMode; initialDate?: string; autoScan?: boolean;
   initialAmount?: number; initialCategory?: string;
-  onSaved: (msg: string, ids: string[]) => void;
+  onSaved: (msg: string, ids: string[]) => void; onUnlock: (goalId: string) => void;
 }) {
   const { state } = store;
   const cats = state.categories.filter((c) => !c.hidden);
@@ -41,6 +43,9 @@ export function AddSheet({
   const [voiceMissing, setVoiceMissing] = useState<string[]>([]);
   const [voiceUnsupported, setVoiceUnsupported] = useState(false);
   const [scan, setScan] = useState<{ preview: string; busy: boolean; result?: ReceiptResult } | null>(null);
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const [keepScan, setKeepScan] = useState(true);
+  const onClose = () => { files.forEach(removeAttachment); close0(); };
   const fileRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
 
@@ -48,7 +53,7 @@ export function AddSheet({
     if (!open) return;
     setMode(initialMode); setAmount(initialAmount ? String(initialAmount) : ''); setNote('');
     if (initialCategory) { setCat(initialCategory); } setFee(''); setDupWarn(null); setHeard(''); setScan(null);
-    setVoiceMissing([]); setCatTouched(!!initialCategory); setDate(initialDate ?? toISODate(new Date()));
+    setVoiceMissing([]); setFiles([]); setKeepScan(true); setCatTouched(!!initialCategory); setDate(initialDate ?? toISODate(new Date()));
     if (autoScan) setTimeout(() => fileRef.current?.click(), 150);
     else setTimeout(() => amountRef.current?.focus(), 250);
   }, [open, initialMode, initialDate, autoScan, initialAmount, initialCategory]);
@@ -86,8 +91,17 @@ export function AddSheet({
     }, w.initialBalance);
   }
 
-  function save(force = false) {
+  const blocked = mode === 'income' ? null : lockCheck(state, mode === 'transfer' ? fromWallet : wallet, n + (Number(fee) || 0));
+
+  async function attachments() {
+    const out = [...files];
+    if (scan && keepScan && mode !== 'transfer') out.push(await addAttachmentFromDataUrl(scan.preview, `recu-${date}.jpg`));
+    return out.length ? out : undefined;
+  }
+
+  async function save(force = false) {
     if (n <= 0) { amountRef.current?.focus(); return; }
+    if (blocked) return;
     const ids: string[] = [];
     if (mode === 'transfer') {
       if (fromWallet === toWallet) return;
@@ -100,13 +114,14 @@ export function AddSheet({
     const draft = { type: mode, amount: n, date, categoryId: mode === 'expense' ? cat : inc, note: note || undefined } as const;
     const dup = findDuplicate(state.txs, draft);
     if (dup && !force) { setDupWarn(dup); return; }
-    ids.push(store.addTx({ ...draft, walletId: wallet }));
+    ids.push(store.addTx({ ...draft, walletId: wallet, attachments: await attachments() }));
     const f = Number(fee) || 0;
     if (mode === 'expense' && f > 0) ids.push(store.addTx({ type: 'expense', amount: f, date, categoryId: 'c_fees', walletId: wallet, note: 'Frais de transaction' }));
     onSaved(`${mode === 'expense' ? 'Dépense' : 'Revenu'} de ${fmt(n)} XOF enregistré${mode === 'expense' ? 'e' : ''}`, ids);
   }
 
   function repeat(t: Tx) {
+    if (lockCheck(state, t.walletId, t.amount)) { setWallet(t.walletId ?? wallet); setAmount(String(t.amount)); setCat(t.categoryId ?? cat); return; }
     const id = store.addTx({ type: 'expense', amount: t.amount, date: toISODate(new Date()), categoryId: t.categoryId, walletId: t.walletId, note: t.note });
     onSaved(`${t.note ?? 'Dépense'} · ${fmt(t.amount)} XOF répétée`, [id]);
   }
@@ -176,7 +191,7 @@ export function AddSheet({
               <span>Déjà noté ? Une opération de {fmt(dupWarn.amount)} XOF existe le même jour ({dupWarn.note ?? 'même catégorie'}).</span>
             </div>
           )}
-          <Btn onClick={() => save(!!dupWarn)} className="w-full" disabled={n <= 0 || (mode === 'transfer' && fromWallet === toWallet)}>
+          <Btn onClick={() => save(!!dupWarn)} className="w-full" disabled={n <= 0 || !!blocked || (mode === 'transfer' && fromWallet === toWallet)}>
             {dupWarn ? 'Enregistrer quand même' : mode === 'transfer' ? 'Valider le transfert réel' : `Valider ${n ? fmt(n) + ' XOF' : ''}`}
           </Btn>
         </div>
@@ -191,7 +206,7 @@ export function AddSheet({
           ref={amountRef}
           inputMode="numeric"
           pattern="[0-9]*"
-          value={amount ? fmt(Number(amount)) : ''}
+          value={amount ? fmtN(Number(amount)) : ''}
           onChange={(e) => { setAmount(e.target.value.replace(/\D/g, '').slice(0, 9)); setDupWarn(null); }}
           placeholder="0"
           aria-label="Montant en XOF"
@@ -258,7 +273,10 @@ export function AddSheet({
                 <button onClick={() => fileRef.current?.click()} className="mt-1 font-bold text-primary">Reprendre une photo</button>
               </>
             )}
-            <div className="mt-1 text-[10.5px] text-muted">La photo n’est pas conservée.</div>
+            <label className="mt-1.5 flex items-center gap-1.5 text-[11.5px] font-semibold">
+              <input type="checkbox" checked={keepScan} onChange={(e) => setKeepScan(e.target.checked)} className="h-4 w-4 accent-[var(--s-primary)]" />
+              Garder la photo comme justificatif
+            </label>
           </div>
         </div>
       )}
@@ -312,6 +330,7 @@ export function AddSheet({
         <>
           <Label>Depuis</Label>
           <WalletPicker wallets={wallets} value={fromWallet} onChange={setFromWallet} bal={computeBal} />
+          {blocked && <LockedNotice blocked={blocked} amount={n} onUnlock={(g) => { close0(); onUnlock(g); }} />}
           <div className="my-1 flex justify-center text-muted"><LuArrowDown /></div>
           <WalletPicker wallets={wallets} value={toWallet} onChange={setToWallet} bal={computeBal} />
           {n > 0 && fromWallet !== toWallet && (
@@ -326,8 +345,9 @@ export function AddSheet({
         </>
       ) : (
         <>
-          <Label>Payé avec</Label>
+          <Label>{mode === 'income' ? 'Reçu sur' : 'Payé avec'}</Label>
           <WalletPicker wallets={wallets} value={wallet} onChange={setWallet} bal={computeBal} />
+          {blocked && <LockedNotice blocked={blocked} amount={n} onUnlock={(g) => { close0(); onUnlock(g); }} />}
         </>
       )}
 
@@ -349,6 +369,12 @@ export function AddSheet({
         <>
           <Label>Note / commerçant (facultatif)</Label>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Woro-woro Cocody, marché Gouro…" className={inputCls} />
+        </>
+      )}
+      {mode !== 'transfer' && (
+        <>
+          <Label>Justificatif (facultatif)</Label>
+          <AttachmentsField value={files} onChange={setFiles} />
         </>
       )}
     </Sheet>

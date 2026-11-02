@@ -6,9 +6,10 @@ import { APP } from '../config';
 import type { Store } from '../store';
 import { hasData, mergeStates } from '../sync';
 import { initialState } from '../data';
+import { uploadPendingFiles } from './files';
 
 declare const __API_BASE__: string;
-const API = (typeof __API_BASE__ !== 'undefined' && __API_BASE__) || APP.apiBase || '';
+export const API = (typeof __API_BASE__ !== 'undefined' && __API_BASE__) || APP.apiBase || '';
 const KEY = 'budget-ivoire:session';
 
 export interface Session { token: string; email: string; name?: string; version: number; dirty: boolean; lastSync?: string }
@@ -38,6 +39,12 @@ async function api(path: string, opts: { method?: string; body?: unknown; token?
   if (res.status === 404 && !body.error) throw new ApiError(404, 'La sauvegarde en ligne n’est pas encore activée sur ce site (voir le guide de déploiement).');
   if (!res.ok) throw new ApiError(res.status, body.error || 'Erreur du serveur.', body);
   return body;
+}
+
+/** Vérifie le mot de passe du compte (pour « code oublié »). */
+export async function verifyPassword(email: string, password: string) {
+  await api('/api/auth/login', { method: 'POST', body: { email, password } });
+  return true;
 }
 
 export function useAccount(store: Store) {
@@ -91,6 +98,8 @@ export function useAccount(store: Store) {
       }
       setSession({ ...s, version, dirty: false, lastSync: new Date().toISOString() });
       setStatus('synced');
+      // Justificatifs : envoyés après les données, en arrière-plan.
+      uploadPendingFiles(stateRef.current, s.token).catch(() => {});
       setError('');
     } catch (e) {
       const err = e as ApiError;

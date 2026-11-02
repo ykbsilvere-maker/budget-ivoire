@@ -5,6 +5,9 @@
 //   GET    /api/data         (Bearer)                  → { version, updatedAt, state }
 //   PUT    /api/data         (Bearer) { baseVersion, state } → { version, updatedAt } | 409 { current }  (POST accepté aussi)
 //   DELETE /api/account      (Bearer) { password }     → supprime compte + données
+//   PUT    /api/files/:id    (Bearer) { mime, data(base64) } → justificatif privé (POST accepté aussi)
+//   GET    /api/files/:id    (Bearer)                  → { mime, data }
+//   DELETE /api/files/:id    (Bearer)
 // =====================================================================
 import crypto from 'node:crypto';
 import { Buffer } from 'node:buffer';
@@ -24,9 +27,14 @@ export interface Storage {
   deleteUser(id: string): Promise<void>;
   getData(userId: string): Promise<DataDoc | null>;
   saveData(userId: string, base: number, state: unknown): Promise<{ version: number; updatedAt: string } | null>; // null = conflit
+  putFile(userId: string, id: string, bytes: Uint8Array, mime: string): Promise<void>;
+  getFile(userId: string, id: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
+  deleteFile(userId: string, id: string): Promise<void>;
 }
 
 const MAX_BYTES = 4_000_000;
+const MAX_FILE_BODY = 8_000_000; // ≈ 6 Mo de fichier une fois encodé en base64
+const FILE_MIMES = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
 const TOKEN_DAYS = 90;
 const MAX_FAILS = 5;
 const LOCK_MINUTES = 15;
@@ -77,7 +85,7 @@ export function createHandler(db: Storage, opts: { secret?: string } = {}) {
     let body: any = {};
     if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
       const text = await req.text();
-      if (text.length > MAX_BYTES) return err('Données trop volumineuses.', 413);
+      if (text.length > (path.startsWith('/api/files/') ? MAX_FILE_BODY : MAX_BYTES)) return err('Données trop volumineuses.', 413);
       try { body = text ? JSON.parse(text) : {}; } catch { return err('Requête invalide.', 400); }
     }
 
@@ -126,6 +134,27 @@ export function createHandler(db: Storage, opts: { secret?: string } = {}) {
       await db.deleteUser(user.id);
       return json({ deleted: true });
     }
+    const fm = path.match(/^\/api\/files\/([\w-]{6,64})$/);
+    if (fm) {
+      const id = fm[1];
+      if (req.method === 'GET') {
+        const f = await db.getFile(user.id, id);
+        if (!f) return err('Fichier introuvable.', 404);
+        return json({ mime: f.mime, data: Buffer.from(f.bytes).toString('base64') });
+      }
+      if (req.method === 'PUT' || req.method === 'POST') {
+        const mime = String(body.mime || '');
+        if (!FILE_MIMES.test(mime)) return err('Format non accepté (photo ou PDF).', 400);
+        const bytes = Buffer.from(String(body.data || ''), 'base64');
+        if (!bytes.length) return err('Fichier vide.', 400);
+        await db.putFile(user.id, id, new Uint8Array(bytes), mime);
+        return json({ stored: true, size: bytes.length }, 201);
+      }
+      if (req.method === 'DELETE') {
+        await db.deleteFile(user.id, id);
+        return json({ deleted: true });
+      }
+    }
     return err('Introuvable.', 404);
   }
 
@@ -146,7 +175,11 @@ export function memoryStorage(): Storage {
   let secret: string | null = null;
   const users = new Map<string, UserRow>();
   const data = new Map<string, DataDoc>();
+  const files = new Map<string, { bytes: Uint8Array; mime: string }>();
   return {
+    putFile: async (u, id, bytes, mime) => { files.set(`${u}/${id}`, { bytes, mime }); },
+    getFile: async (u, id) => files.get(`${u}/${id}`) ?? null,
+    deleteFile: async (u, id) => { files.delete(`${u}/${id}`); },
     getSecret: async () => secret,
     setSecret: async (v) => { secret ??= v; },
     userByEmail: async (e) => [...users.values()].find((u) => u.email === e) ?? null,
@@ -158,7 +191,7 @@ export function memoryStorage(): Storage {
       return row;
     },
     updateUser: async (id, patch) => { const u = users.get(id); if (u) users.set(id, { ...u, ...patch }); },
-    deleteUser: async (id) => { users.delete(id); data.delete(id); },
+    deleteUser: async (id) => { users.delete(id); data.delete(id); for (const k of [...files.keys()]) if (k.startsWith(id + '/')) files.delete(k); },
     getData: async (id) => data.get(id) ?? null,
     saveData: async (id, base, state) => {
       const cur = data.get(id)?.version ?? 0;

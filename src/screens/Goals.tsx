@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { LuPlus, LuHandCoins, LuPencil } from 'react-icons/lu';
+import { LuPlus, LuHandCoins, LuPencil, LuLock, LuLockOpen, LuLandmark } from 'react-icons/lu';
 import type { Debt, Goal, MonthReport, State } from '../engine';
-import { fmt, fmtK, goalMonthly, goalSaved, monthsBetween, savingsTrajectory } from '../engine';
+import { fmt, fmtK, goalMonthly, goalPlanned, goalSaved, heldInOf, monthsBetween, savingsTrajectory } from '../engine';
 import { Bar, Btn, Empty, Segmented, cx } from '../ui';
 
 const monthLong = (m: string) => {
@@ -10,23 +10,23 @@ const monthLong = (m: string) => {
 };
 
 export function GoalsScreen({
-  state, r, onNewGoal, onEditGoal, onContribute, onNewDebt, onEditDebt, onPayDebt,
+  state, r, onNewGoal, onEditGoal, onContribute, onUnlock, onNewDebt, onEditDebt, onPayDebt,
 }: {
-  state: State; r: MonthReport; onNewGoal: () => void; onEditGoal: (id: string) => void; onContribute: (id: string) => void;
+  state: State; r: MonthReport; onNewGoal: () => void; onEditGoal: (id: string) => void; onContribute: (id: string) => void; onUnlock: (id: string) => void;
   onNewDebt: () => void; onEditDebt: (id: string) => void; onPayDebt: (id: string) => void;
 }) {
   const [tab, setTab] = useState<'goals' | 'debts' | 'path'>('goals');
   return (
     <div className="flex flex-col gap-3">
       <Segmented value={tab} onChange={setTab} options={[{ value: 'goals', label: 'Objectifs' }, { value: 'debts', label: 'Crédits' }, { value: 'path', label: 'Trajectoire' }]} />
-      {tab === 'goals' && <GoalsList state={state} month={r.month} onNew={onNewGoal} onEdit={onEditGoal} onContribute={onContribute} />}
+      {tab === 'goals' && <GoalsList state={state} month={r.month} onNew={onNewGoal} onEdit={onEditGoal} onContribute={onContribute} onUnlock={onUnlock} />}
       {tab === 'debts' && <Debts debts={state.debts ?? []} onNew={onNewDebt} onEdit={onEditDebt} onPay={onPayDebt} />}
       {tab === 'path' && <Trajectory state={state} r={r} />}
     </div>
   );
 }
 
-function GoalsList({ state, month, onNew, onEdit, onContribute }: { state: State; month: string; onNew: () => void; onEdit: (id: string) => void; onContribute: (id: string) => void }) {
+function GoalsList({ state, month, onNew, onEdit, onContribute, onUnlock }: { state: State; month: string; onNew: () => void; onEdit: (id: string) => void; onContribute: (id: string) => void; onUnlock: (id: string) => void }) {
   const goals = state.goals ?? [];
   return (
     <>
@@ -37,17 +37,22 @@ function GoalsList({ state, month, onNew, onEdit, onContribute }: { state: State
           <p className="mt-1 text-[13px] text-muted">Voyage, moto, mariage, fonds d’urgence… Fixe un montant et une date, je te dis combien mettre de côté chaque mois.</p>
         </div>
       )}
-      {goals.map((g) => <GoalCard key={g.id} g={g} month={month} onEdit={() => onEdit(g.id)} onContribute={() => onContribute(g.id)} />)}
+      {goals.map((g) => <GoalCard key={g.id} g={g} state={state} month={month} onEdit={() => onEdit(g.id)} onContribute={() => onContribute(g.id)} onUnlock={() => onUnlock(g.id)} />)}
       <Btn onClick={onNew} className="mx-auto w-full"><LuPlus /> Ajouter un objectif</Btn>
     </>
   );
 }
 
-function GoalCard({ g, month, onEdit, onContribute }: { g: Goal; month: string; onEdit: () => void; onContribute: () => void }) {
+function GoalCard({ g, state, month, onEdit, onContribute, onUnlock }: { g: Goal; state: State; month: string; onEdit: () => void; onContribute: () => void; onUnlock: () => void }) {
   const saved = goalSaved(g);
+  const wName = (id?: string) => state.wallets.find((w) => w.id === id)?.name ?? '';
+  const held = new Map<string, number>();
+  for (const c of g.contributions) held.set(heldInOf(c), (held.get(heldInOf(c)) ?? 0) + c.amount);
+  const locked = [...held].filter(([, v]) => v > 0);
+  const lockedTotal = locked.reduce((a, [, v]) => a + v, 0);
   const pct = Math.min(100, Math.round((saved / Math.max(1, g.target)) * 100));
   const left = Math.max(0, g.target - saved);
-  const monthly = goalMonthly(g, month);
+  const monthly = g.monthly ? goalPlanned(g, month) : goalMonthly(g, month);
   const late = monthsBetween(month, g.deadline) < 0 && left > 0;
   return (
     <section className="relative overflow-hidden rounded-[26px] text-white shadow-md" style={{ background: 'var(--s-hero)' }}>
@@ -60,6 +65,12 @@ function GoalCard({ g, month, onEdit, onContribute }: { g: Goal; month: string; 
         </div>
         <div className="num mt-1 text-[34px] font-extrabold leading-none">{fmt(g.target)} XOF</div>
         <div className="text-[12.5px] opacity-85">à atteindre d’ici {monthLong(g.deadline)}</div>
+        {g.project && <p className="mt-2 line-clamp-3 text-[12.5px] opacity-90">{g.project}</p>}
+        {g.sourceWalletId && (
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-black/25 px-2.5 py-1 text-[11.5px] font-semibold backdrop-blur-sm">
+            <LuLandmark size={13} /> Approvisionné depuis {wName(g.sourceWalletId)}
+          </div>
+        )}
         <div className="num mt-8 text-center text-[44px] font-extrabold leading-none">{pct}%</div>
         <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white/25"><div className="h-full rounded-full bg-white" style={{ width: `${pct}%` }} /></div>
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -67,13 +78,26 @@ function GoalCard({ g, month, onEdit, onContribute }: { g: Goal; month: string; 
           <div className="rounded-2xl bg-black/20 p-2.5 text-center backdrop-blur-sm"><div className="text-[10.5px] font-semibold uppercase tracking-wide opacity-80">Restant</div><div className="num text-[17px] font-extrabold">{fmt(left)} XOF</div></div>
         </div>
         <div className="mt-3 text-center text-[12.5px] opacity-90">
-          {left === 0 ? 'Objectif atteint, bravo ! 🎉' : late ? 'Date dépassée : choisis une nouvelle échéance.' : <>≈ <b>{fmt(monthly)} XOF</b> par mois pour y arriver</>}
+          {g.doneAt ? 'Projet réalisé, bravo ! 🎉' : left === 0 ? 'Objectif atteint, bravo ! 🎉' : late ? 'Date dépassée : choisis une nouvelle échéance.' : <>{g.monthly ? 'Prévu :' : '≈'} <b>{fmt(monthly)} XOF</b> par mois{g.day ? `, le ${g.day}` : ''}</>}
         </div>
-        {left > 0 && (
-          <button onClick={onContribute} className="mx-auto mt-3 flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[14px] font-bold text-[#172B23]">
-            <LuHandCoins /> Ajouter de l’argent
-          </button>
+        {lockedTotal > 0 && (
+          <div className="mt-3 flex items-center gap-2 rounded-2xl bg-black/25 px-3 py-2 text-[12px] backdrop-blur-sm">
+            <LuLock size={15} className="shrink-0" />
+            <span className="min-w-0 flex-1"><b className="num">{fmt(lockedTotal)} XOF bloqués</b> sur {locked.map(([w]) => wName(w)).join(', ')} — non utilisables pour d’autres dépenses</span>
+          </div>
         )}
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {left > 0 && !g.doneAt && (
+            <button onClick={onContribute} className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[14px] font-bold text-[#172B23]">
+              <LuHandCoins /> Ajouter de l’argent
+            </button>
+          )}
+          {lockedTotal > 0 && (
+            <button onClick={onUnlock} className="flex items-center gap-2 rounded-full bg-white/20 px-4 py-2.5 text-[14px] font-bold backdrop-blur-sm">
+              <LuLockOpen /> Débloquer
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );

@@ -209,3 +209,66 @@ test('rythme : budget mensuel réparti par semaine, par jour ou à dates précis
   const todo = todayTodos(s, new Date(2026, 10, 11));
   assert.ok(todo.some((t) => t.categoryId === 'c_transport'));
 });
+
+test('À régler : retards, aujourd’hui, à venir ; ✓ Payé et « pas cette fois » les retirent', async () => {
+  const { pendingItems, planKey } = await import('./engine');
+  const s = blank();
+  const today = new Date(2026, 10, 11); // mercredi 11 novembre
+  s.categories = s.categories.map((c) =>
+    c.id === 'c_transport' ? { ...c, budget: 100000, plan: { freq: 'weekly' as const, weekdays: [1, 3] } } :
+    c.id === 'c_food' ? { ...c, budget: 30000, plan: { freq: 'daily' as const } } : c);
+  const items = pendingItems(s, today);
+  const loyer = items.find((i) => i.refId === 'c_rent')!;
+  assert.equal(loyer.status, 'overdue'); // loyer le 5 → en retard
+  assert.equal(loyer.amount, 150000);
+  assert.equal(items.filter((i) => i.refId === 'c_food').length, 1); // quotidien : seulement aujourd'hui
+  assert.ok(items.some((i) => i.refId === 'c_transport' && i.date === '2026-11-09' && i.status === 'overdue'));
+  assert.ok(items.some((i) => i.refId === 'c_cie' && i.status === 'soon')); // CIE le 15
+  assert.equal(items[0].status, 'overdue'); // tri : retards d'abord
+  // ✓ Payé : opération liée à l'échéance
+  s.txs.push(tx({ amount: 150000, categoryId: 'c_rent', walletId: 'w_bank', date: '2026-11-11', planKey: planKey('c_rent', '2026-11-05') }));
+  // Pas cette fois
+  s.skipped = [planKey('c_transport', '2026-11-09')];
+  const after = pendingItems(s, today);
+  assert.ok(!after.some((i) => i.refId === 'c_rent'));
+  assert.ok(!after.some((i) => i.key === planKey('c_transport', '2026-11-09')));
+  // Paiement partiel : il reste la différence
+  s.txs.push(tx({ amount: 400, categoryId: 'c_food', walletId: 'w_cash', date: '2026-11-11' }));
+  const food = pendingItems(s, today).find((i) => i.refId === 'c_food')!;
+  assert.equal(food.amount, food.planned - 400);
+});
+
+test('argent bloqué pour un projet : dépense refusée tant qu’il n’est pas débloqué', async () => {
+  const { lockCheck, availability, goalSaved, pendingItems } = await import('./engine');
+  const s = blank();
+  s.wallets = s.wallets.map((w) => (w.id === 'w_bank' ? { ...w, initialBalance: 300000 } : w));
+  s.goals = [{ id: 'moto', name: 'Moto', target: 600000, deadline: '2027-06', createdAt: '', sourceWalletId: 'w_bank', monthly: 50000, day: 28,
+    contributions: [{ date: '2026-11-01', amount: 200000, walletId: 'w_bank', heldIn: 'w_bank' }] }];
+  const a = availability(s, 'w_bank');
+  assert.deepEqual([a.balance, a.locked, a.available], [300000, 200000, 100000]);
+  assert.equal(lockCheck(s, 'w_bank', 80000), null); // tient dans la partie libre
+  const b = lockCheck(s, 'w_bank', 150000)!;
+  assert.equal(b.missing, 50000);
+  assert.equal(b.goals[0].name, 'Moto');
+  assert.equal(lockCheck(s, 'w_cash', 150000), null); // autre compte : rien de bloqué
+  // Disponible du mois : la part bloquée est exclue
+  assert.equal(computeMonth(s, '2026-11', new Date(2026, 10, 11)).totalCash, 100000);
+  // Déblocage pour réaliser le projet : la progression reste, l'argent redevient utilisable
+  s.goals[0].contributions.push({ date: '2026-11-12', amount: -200000, heldIn: 'w_bank', release: true, forProject: true });
+  assert.equal(lockCheck(s, 'w_bank', 150000), null);
+  assert.equal(goalSaved(s.goals[0]), 200000);
+  // Versement mensuel du projet dans « À régler »
+  const p = pendingItems(s, new Date(2026, 10, 25)).find((i) => i.kind === 'goal')!;
+  assert.equal(p.amount, 50000);
+  assert.equal(p.walletId, 'w_bank');
+});
+
+test('mode discret : les montants affichés sont masqués, la saisie non', async () => {
+  const { fmt, fmtN, fmtK, setMaskAmounts } = await import('./engine');
+  setMaskAmounts(true);
+  assert.notEqual(fmt(25000), '25 000');
+  assert.notEqual(fmtK(25000), '25 k');
+  assert.equal(fmtN(25000), '25 000');
+  setMaskAmounts(false);
+  assert.equal(fmt(25000), '25 000');
+});

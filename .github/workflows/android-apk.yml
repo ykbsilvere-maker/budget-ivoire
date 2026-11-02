@@ -45,6 +45,14 @@ jobs:
           [ -d android ] || npx cap add android
           npx cap sync android
 
+      - name: Permission empreinte digitale
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          for perm in android.permission.USE_BIOMETRIC; do
+            grep -q "$perm" $M || sed -i "s#</manifest>#    <uses-permission android:name=\"$perm\" />\n</manifest>#" $M
+          done
+          grep uses-permission $M
+
       - name: Version Android (nom = package.json, code = numéro de compilation)
         run: |
           V=$(node -p "require('./package.json').version")

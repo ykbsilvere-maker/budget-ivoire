@@ -181,6 +181,8 @@ body {
 
 @keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes shake { 0%,100% { transform: translateX(0) } 20%,60% { transform: translateX(-8px) } 40%,80% { transform: translateX(8px) } }
+.anim-shake { animation: shake .35s ease; }
 @keyframes pop { 0% { transform: scale(.96); opacity: 0 } 100% { transform: scale(1); opacity: 1 } }
 .anim-sheet { animation: sheet-up .26s cubic-bezier(.2, .8, .2, 1); }
 .anim-fade { animation: fade-in .2s ease-out; }

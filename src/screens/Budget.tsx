@@ -1,7 +1,8 @@
 import { type ReactNode, useMemo, useState } from 'react';
-import { LuChevronDown, LuPlus, LuSettings2, LuSparkles, LuCircleCheck, LuTriangleAlert, LuFlaskConical } from 'react-icons/lu';
+import { LuChevronDown, LuPlus, LuSettings2, LuSparkles, LuCircleCheck, LuTriangleAlert, LuFlaskConical, LuCheck } from 'react-icons/lu';
 import type { MonthReport, State } from '../engine';
-import { fmt, fmtK, groupReports, monthKey, periodView, shiftMonth, todayTodos } from '../engine';
+import { fmt, fmtK, groupReports, monthKey, pendingItems, periodView, shiftMonth, type PendingItem } from '../engine';
+import { dateLabel } from '../sheets/PaySheet';
 import { Bar, HEALTH, Money, STATUS_COLOR, Segmented, cx } from '../ui';
 import { Glyph } from '../icons';
 import { AllocRing } from '../sheets/Welcome';
@@ -12,13 +13,14 @@ const monthShort = (m: string) => {
 };
 
 export function BudgetScreen({
-  state, r, month, setMonth, onRebalance, onCategory, onNewCategory, onGroups, onSimulate, onLog, today,
+  state, r, month, setMonth, onRebalance, onCategory, onNewCategory, onGroups, onSimulate, onPay, today,
 }: {
   state: State; r: MonthReport; month: string; setMonth: (m: string) => void; onRebalance: () => void;
   onCategory: (id: string) => void; onNewCategory: () => void; onGroups: () => void; onSimulate: () => void;
-  onLog: (categoryId: string, amount: number) => void; today: Date;
+  onPay: (p: PendingItem) => void; today: Date;
 }) {
-  const todos = useMemo(() => (month === monthKey(today) ? todayTodos(state, today) : []), [state, month, today]);
+  const pending = useMemo(() => (month === monthKey(today) ? pendingItems(state, today) : []), [state, month, today]);
+  const [showAll, setShowAll] = useState(false);
   const groups = useMemo(() => groupReports(state, r), [state, r]);
   const [open, setOpen] = useState<string | null>(null);
   const [mode, setMode] = useState<'plan' | 'real'>('plan');
@@ -75,24 +77,32 @@ export function BudgetScreen({
         </div>
       )}
 
-      {/* Prévu aujourd'hui */}
-      {todos.length > 0 && (
+      {/* À régler : un geste pour dire « c'est payé » */}
+      {pending.length > 0 && (
         <section className="card p-3">
-          <h3 className="px-1 pb-1 text-[14px] font-bold">Prévu aujourd’hui</h3>
-          {todos.map((t) => (
-            <div key={t.categoryId} className="flex items-center gap-3 border-t border-line px-1 py-2 first-of-type:border-0">
-              <Glyph icon={t.icon} logo={t.logo} label={t.name} size={34} />
+          <div className="flex items-center justify-between px-1 pb-1">
+            <h3 className="text-[14px] font-bold">À régler</h3>
+            <span className="text-[11.5px] text-muted">{pending.length} · <Money v={pending.reduce((a, p) => a + p.amount, 0)} /></span>
+          </div>
+          {(showAll ? pending : pending.slice(0, 4)).map((p) => (
+            <div key={p.key} className="flex items-center gap-3 border-t border-line px-1 py-2 first-of-type:border-0">
+              <Glyph icon={p.icon} logo={p.logo} label={p.name} size={38} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13.5px] font-semibold">{t.name}</span>
-                <span className="block text-[11.5px] text-muted">
-                  {t.kind === 'obligatory' ? 'À payer' : 'Prévu'} : {fmt(t.amount)} XOF{t.done > 0 ? ` · noté ${fmt(t.done)}` : ''}
+                <span className="block truncate text-[13.5px] font-semibold">{p.name}</span>
+                <span className={cx('block truncate text-[11.5px]', p.status === 'overdue' ? 'font-semibold text-danger' : p.status === 'today' ? 'font-semibold text-primary' : 'text-muted')}>
+                  {dateLabel(p.date)} · <Money v={p.amount} />
                 </span>
               </span>
-              {t.done >= t.amount
-                ? <span className="text-[12px] font-bold text-ok">✓ Fait</span>
-                : <button onClick={() => onLog(t.categoryId, t.kind === 'obligatory' ? t.amount - t.done : 0)} className="rounded-xl bg-primary px-3 py-1.5 text-[12px] font-bold text-onprimary">Noter</button>}
+              <button onClick={() => onPay(p)} className="flex shrink-0 items-center gap-1 rounded-xl bg-primary px-3 py-2 text-[12.5px] font-bold text-onprimary active:scale-95" aria-label={`${p.name} : marquer comme payé`}>
+                <LuCheck size={15} strokeWidth={3} /> {p.kind === 'goal' ? 'Versé' : 'Payé'}
+              </button>
             </div>
           ))}
+          {pending.length > 4 && (
+            <button onClick={() => setShowAll(!showAll)} className="mt-1 w-full rounded-xl bg-surface2 py-2 text-[12.5px] font-semibold text-primary">
+              {showAll ? 'Réduire' : `Voir tout (${pending.length})`}
+            </button>
+          )}
         </section>
       )}
 

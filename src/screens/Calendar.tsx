@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { LuChevronLeft, LuChevronRight, LuSearch, LuPlus } from 'react-icons/lu';
+import { LuChevronLeft, LuChevronRight, LuSearch, LuPlus, LuCheck, LuPaperclip } from 'react-icons/lu';
 import type { MonthReport, State, Tx } from '../engine';
-import { daysIn, fmt, fmtK, fromISO, monthDues, pad, shiftMonth, toISODate } from '../engine';
+import { daysIn, fmt, fmtK, isMaskOn, fromISO, monthDues, pad, shiftMonth, toISODate } from '../engine';
 import { Empty, Money, Segmented, cx, inputCls } from '../ui';
 import { Glyph } from '../icons';
+import type { PayTarget } from '../sheets/PaySheet';
 
 const WD = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
@@ -21,7 +22,7 @@ export function TxRow({ t, state, onClick }: { t: Tx; state: State; onClick?: ()
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] font-semibold">{title}</span>
         <span className="block truncate text-[11.5px] text-muted">
-          {sub}{t.history?.length ? ' · modifié' : ''}
+          {t.attachments?.length ? <LuPaperclip className="mr-0.5 inline align-[-1px]" size={11} /> : null}{sub}{t.history?.length ? ' · modifié' : ''}
         </span>
       </span>
       <Money
@@ -34,9 +35,10 @@ export function TxRow({ t, state, onClick }: { t: Tx; state: State; onClick?: ()
 }
 
 export function CalendarScreen({
-  state, r, month, setMonth, onEdit, onAdd,
+  state, r, month, setMonth, onEdit, onAdd, onPay,
 }: {
   state: State; r: MonthReport; month: string; setMonth: (m: string) => void; onEdit: (t: Tx) => void; onAdd: (date: string) => void;
+  onPay: (p: PayTarget) => void;
 }) {
   const today = toISODate(new Date());
   const [sel, setSel] = useState(() => (today.startsWith(month) ? today : `${month}-01`));
@@ -132,7 +134,7 @@ export function CalendarScreen({
                     style={{ background: tone ? `color-mix(in srgb, ${tone} 14%, var(--s-surface))` : 'var(--s-surface2)', color: tone ?? undefined }}
                   >
                     <span className={cx(!tone && 'text-muted')}>{day}</span>
-                    {s > 0 && <span className="num text-[9px] font-bold leading-none">{s >= 1000 ? Math.round(s / 1000) + 'k' : s}</span>}
+                    {s > 0 && <span className="num text-[9px] font-bold leading-none">{isMaskOn() ? '•••' : s >= 1000 ? Math.round(s / 1000) + 'k' : s}</span>}
                     {dueByDay(day).length > 0 && (
                       <span className="absolute -right-0.5 -top-1 flex">
                         {dueByDay(day).slice(0, 2).map((d) => (
@@ -173,6 +175,7 @@ export function CalendarScreen({
                 <span className="grid h-9 w-9 place-items-center rounded-xl text-white" style={{ background: d.color }}><Glyph icon={d.icon} label={d.name} size={36} plain /></span>
                 <span className="flex-1 text-[13.5px] font-semibold">{d.name}<span className="block text-[11.5px] font-normal text-muted">{d.paid ? 'Payé ce mois ✓' : 'Échéance du jour'}</span></span>
                 <b className="num text-[14px]">{fmt(d.amount)} XOF</b>
+                {!d.paid && <button onClick={() => onPay({ categoryId: d.categoryId, date: d.date, amount: d.amount })} className="flex items-center gap-1 rounded-xl bg-primary px-2.5 py-1.5 text-[12px] font-bold text-onprimary"><LuCheck size={14} strokeWidth={3} /> Payé</button>}
               </div>
             ))}
             <div className="mt-2">
@@ -188,6 +191,7 @@ export function CalendarScreen({
                   <span className="flex-1 text-[13.5px] font-semibold">{d.name}</span>
                   <span className="whitespace-nowrap text-[12px] text-muted">le {d.day}</span>
                   <Money v={d.amount} className="text-right text-[13.5px] font-bold" />
+                  <button onClick={() => onPay({ categoryId: d.categoryId, date: d.date, amount: d.amount })} className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-onprimary" aria-label={`${d.name} : marquer comme payé`}><LuCheck size={16} strokeWidth={3} /></button>
                 </div>
               ))}
             </div>

@@ -69,6 +69,19 @@ export interface Tx {
   note?: string;
   createdAt?: string;
   history?: TxEdit[];
+  /** Lien vers une dépense prévue (« catégorie@AAAA-MM-JJ ») réglée via « ✓ Payé ». */
+  planKey?: string;
+  /** Justificatifs (reçu, facture…) : fichiers gardés sur l'appareil et dans la sauvegarde en ligne. */
+  attachments?: Attachment[];
+}
+
+export interface Attachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  /** Date d'ajout. */
+  addedAt?: string;
 }
 
 export type PlanFreq = 'monthly' | 'weekly' | 'daily' | 'dates';
@@ -111,8 +124,34 @@ export interface Goal {
   /** Échéance AAAA-MM */
   deadline: string;
   image?: string;
-  contributions: { date: string; amount: number; walletId?: string }[];
+  /** Description du projet (ce que l'objectif doit financer). */
+  project?: string;
+  /** Banque / portefeuille depuis lequel l'objectif est approvisionné. */
+  sourceWalletId?: string;
+  /** Versement mensuel prévu (sinon calculé d'après l'échéance) et jour du versement. */
+  monthly?: number;
+  day?: number;
+  remind?: boolean;
+  /** Objectif mis en pause : plus de versement proposé. */
+  paused?: boolean;
+  /** Projet réalisé (date). */
+  doneAt?: string;
+  contributions: Contribution[];
   createdAt: string;
+}
+
+/** Versement vers un objectif. L'argent reste BLOQUÉ sur `heldIn` jusqu'à ce qu'on le débloque (montant négatif). */
+export interface Contribution {
+  date: string;
+  amount: number;
+  /** Compte d'où vient l'argent. */
+  walletId?: string;
+  /** Compte où l'argent est gardé (bloqué). Par défaut : Épargne. */
+  heldIn?: string;
+  /** Déblocage (montant négatif) : l'argent redevient utilisable. */
+  release?: boolean;
+  /** Déblocage pour payer le projet lui-même (la progression est conservée). */
+  forProject?: boolean;
 }
 
 export interface Debt {
@@ -134,6 +173,8 @@ export interface State {
   groups?: Group[];
   goals?: Goal[];
   debts?: Debt[];
+  /** Dépenses prévues volontairement sautées (« Pas cette fois »). */
+  skipped?: string[];
   categories: Category[];
   incomeCategories: IncomeCategory[];
   wallets: Wallet[];
@@ -171,6 +212,8 @@ export interface WalletReport {
   transfersIn: number;
   transfersOut: number;
   balance: number;
+  /** Part du solde bloquée pour des objectifs / projets. */
+  locked: number;
 }
 
 export interface MonthReport {
@@ -229,9 +272,17 @@ export const shiftMonth = (month: string, delta: number) => {
   return monthKey(new Date(y, m - 1 + delta, 1));
 };
 
-export const fmt = (n: number) => (Math.round(n) || 0).toLocaleString('fr-FR').replace(/ | /g, ' ');
+/** Montants masqués (mode discret) : tous les affichages passent par fmt / fmtK. */
+let MASK = false;
+export const setMaskAmounts = (v: boolean) => { MASK = v; };
+export const isMaskOn = () => MASK;
+export const MASK_TEXT = '• • •';
+/** Format brut, jamais masqué (saisie, exports, calculs). */
+export const fmtN = (n: number) => (Math.round(n) || 0).toLocaleString('fr-FR').replace(/ | /g, ' ');
+export const fmt = (n: number) => (MASK ? MASK_TEXT : fmtN(n));
 export const fmtF = (n: number) => `${fmt(n)} XOF`;
 export const fmtK = (n: number) => {
+  if (MASK) return MASK_TEXT;
   const a = Math.abs(n);
   if (a >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.', ',')} M`;
   if (a >= 10_000) return `${Math.round(n / 1000)} k`;
@@ -258,10 +309,11 @@ export function walletReports(state: State, until: string): WalletReport[] {
           if (t.fromWalletId === w.id) tout += t.amount;
         }
       }
+      const balance = w.initialBalance + inflow - outflow + tin - tout;
       return {
         id: w.id, name: w.name, icon: w.icon, logo: w.logo, source: w.source, updatedAt: w.updatedAt, reserved: !!w.reserved,
         initial: w.initialBalance, inflow, outflow, transfersIn: tin, transfersOut: tout,
-        balance: w.initialBalance + inflow - outflow + tin - tout,
+        balance, locked: Math.min(lockedIn(state, w.id), Math.max(0, balance)),
       };
     });
 }
@@ -348,7 +400,8 @@ export function computeMonth(state: State, month: string, today: Date): MonthRep
 
   const until = month === todayKey ? toISODate(today) : `${month}-${pad(dim)}`;
   const wallets = walletReports(state, until);
-  const totalCash = wallets.filter((w) => !w.reserved).reduce((a, w) => a + w.balance, 0);
+  // L'argent bloqué pour un projet n'est pas « disponible ».
+  const totalCash = wallets.filter((w) => !w.reserved).reduce((a, w) => a + w.balance - w.locked, 0);
   const netWorth = wallets.reduce((a, w) => a + w.balance, 0);
 
   const incomePending = Math.max(0, settings.expectedIncome - incomeReceived);
@@ -610,7 +663,7 @@ export function groupReports(state: State, r: MonthReport): GroupReport[] {
     .filter((g) => g.cats.length > 0);
 }
 
-export interface Due { categoryId: string; name: string; icon: string; logo?: string; day: number; amount: number; paid: boolean; color: string }
+export interface Due { categoryId: string; name: string; icon: string; logo?: string; day: number; date: string; amount: number; paid: boolean; color: string }
 
 /** Échéances et dépenses planifiées du mois, jour par jour (charges fixes + enveloppes à rythme). */
 export function monthDues(state: State, r: MonthReport): Due[] {
@@ -623,10 +676,12 @@ export function monthDues(state: State, r: MonthReport): Due[] {
     const rep = r.categories.find((x) => x.id === c.id);
     for (const o of occ) {
       const dayKey = `${r.month}-${pad(o.day)}`;
-      const spentDay = state.txs.filter((t) => t.type === 'expense' && t.categoryId === c.id && t.date === dayKey).reduce((a, t) => a + t.amount, 0);
+      const key = planKey(c.id, dayKey);
+      const linked = state.txs.filter((t) => t.type === 'expense' && t.planKey === key).reduce((a, t) => a + t.amount, 0);
+      const spentDay = state.txs.filter((t) => t.type === 'expense' && t.categoryId === c.id && t.date === dayKey && !t.planKey).reduce((a, t) => a + t.amount, 0);
       out.push({
-        categoryId: c.id, name: c.name, icon: c.icon, logo: c.logo, amount: o.amount, day: o.day,
-        paid: monthly ? (rep?.spent ?? 0) >= c.budget : spentDay >= o.amount,
+        categoryId: c.id, name: c.name, icon: c.icon, logo: c.logo, amount: o.amount, day: o.day, date: dayKey,
+        paid: (state.skipped ?? []).includes(key) || linked >= o.amount || (monthly ? (rep?.spent ?? 0) >= c.budget : spentDay + linked >= o.amount),
         color: color.get(c.group ?? '') ?? '#A3A9B3',
       });
     }
@@ -634,7 +689,8 @@ export function monthDues(state: State, r: MonthReport): Due[] {
   return out.sort((a, b) => a.day - b.day);
 }
 
-export const goalSaved = (g: Goal) => g.contributions.reduce((a, c) => a + c.amount, 0);
+/** Épargné pour l'objectif (un déblocage « pour réaliser le projet » ne fait pas reculer la progression). */
+export const goalSaved = (g: Goal) => g.contributions.reduce((a, c) => a + (c.forProject ? 0 : c.amount), 0);
 
 /** Nombre de mois entre deux clés AAAA-MM (b - a). */
 export const monthsBetween = (a: string, b: string) => {
@@ -721,4 +777,148 @@ export function todayTodos(state: State, today: Date): Todo[] {
       const done = state.txs.filter((t) => t.type === 'expense' && t.categoryId === c.id && t.date === iso).reduce((a, t) => a + t.amount, 0);
       return [{ categoryId: c.id, name: c.name, icon: c.icon, logo: c.logo, amount: o.amount, kind: c.kind, done }];
     });
+}
+
+// ---------------------------------------------------------------------
+// « À régler » : ce qui est prévu et pas encore marqué comme payé
+// ---------------------------------------------------------------------
+export type PendingStatus = 'overdue' | 'today' | 'soon';
+export interface PendingItem {
+  key: string;
+  kind: 'category' | 'goal';
+  refId: string;
+  name: string;
+  icon: string;
+  logo?: string;
+  date: string;
+  /** Montant prévu restant à régler. */
+  amount: number;
+  planned: number;
+  status: PendingStatus;
+  obligatory: boolean;
+  walletId?: string;
+}
+
+export const planKey = (categoryId: string, date: string) => `${categoryId}@${date}`;
+export const goalKey = (goalId: string, month: string) => `goal:${goalId}@${month}`;
+
+/** Effective monthly saving for a goal (fixed amount or computed from the deadline). */
+export const goalPlanned = (g: Goal, month: string) => (g.monthly && g.monthly > 0 ? g.monthly : goalMonthly(g, month));
+
+/**
+ * Liste simple de ce qui reste à régler : en retard, aujourd'hui, et les `horizon` prochains jours.
+ * Une échéance est réglée si une opération lui est liée (planKey), si elle est sautée,
+ * ou — pour les opérations notées « à la main » — si la dépense de ce jour (ou du mois pour une charge mensuelle) la couvre.
+ */
+export function pendingItems(state: State, today: Date, horizon = 7): PendingItem[] {
+  const month = monthKey(today);
+  const iso = toISODate(today);
+  const last = toISODate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + horizon));
+  const weekAgo = toISODate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7));
+  const skipped = new Set(state.skipped ?? []);
+  const exp = state.txs.filter((t) => t.type === 'expense');
+  const out: PendingItem[] = [];
+  const status = (d: string): PendingStatus => (d < iso ? 'overdue' : d === iso ? 'today' : 'soon');
+  const months = today.getDate() + horizon > daysIn(month) ? [month, shiftMonth(month, 1)] : [month];
+
+  for (const c of state.categories) {
+    if (c.hidden || c.budget <= 0) continue;
+    const p = planOf(c);
+    if (!p) continue;
+    let soon = 0;
+    for (const m of months) {
+      const occ = occurrences(c, m);
+      for (const o of occ) {
+        const date = `${m}-${pad(o.day)}`;
+        if (date > last) continue;
+        // Quotidien : seulement aujourd'hui. Hebdomadaire / dates : seulement la prochaine échéance à venir.
+        if (p.freq === 'daily' && date !== iso) continue;
+        if (date > iso && p.freq !== 'monthly' && soon >= 1) continue;
+        // Retards : tout le mois pour une charge mensuelle, 7 jours pour le reste, rien pour le quotidien.
+        if (date < iso && (p.freq === 'daily' || (p.freq !== 'monthly' && date < weekAgo) || m !== month)) continue;
+        const key = planKey(c.id, date);
+        if (skipped.has(key)) continue;
+        const linked = exp.filter((t) => t.planKey === key).reduce((a, t) => a + t.amount, 0);
+        let manual = 0;
+        if (p.freq === 'monthly') {
+          // Dépenses du mois non liées à une autre échéance.
+          manual = exp.filter((t) => t.categoryId === c.id && !t.planKey && t.date.startsWith(m)).reduce((a, t) => a + t.amount, 0);
+        } else {
+          manual = exp.filter((t) => t.categoryId === c.id && !t.planKey && t.date === date).reduce((a, t) => a + t.amount, 0);
+        }
+        const left = o.amount - linked - manual;
+        if (left <= 0) continue;
+        if (date > iso) soon++;
+        out.push({
+          key, kind: 'category', refId: c.id, name: c.name, icon: c.icon, logo: c.logo, date,
+          amount: left, planned: o.amount, status: status(date), obligatory: c.kind === 'obligatory',
+        });
+      }
+    }
+  }
+
+  for (const g of state.goals ?? []) {
+    if (g.paused || g.doneAt || !g.day || g.remind === false) continue;
+    if (goalSaved(g) >= g.target) continue;
+    for (const m of months) {
+      if (m > g.deadline) continue;
+      const date = `${m}-${pad(Math.min(g.day, daysIn(m)))}`;
+      if (date > last || (date < iso && m !== month)) continue;
+      const key = goalKey(g.id, m);
+      if (skipped.has(key)) continue;
+      const planned = Math.min(goalPlanned(g, m), g.target - goalSaved(g));
+      const done = g.contributions.filter((c) => c.date.startsWith(m)).reduce((a, c) => a + c.amount, 0);
+      const left = planned - done;
+      if (left <= 0) continue;
+      out.push({
+        key, kind: 'goal', refId: g.id, name: g.name, icon: 'piggy', logo: g.image, date, amount: left, planned,
+        status: status(date), obligatory: false, walletId: g.sourceWalletId,
+      });
+    }
+  }
+  const rank = { overdue: 0, today: 1, soon: 2 } as const;
+  return out.sort((a, b) => rank[a.status] - rank[b.status] || a.date.localeCompare(b.date) || Number(b.obligatory) - Number(a.obligatory));
+}
+
+// ---------------------------------------------------------------------
+// Argent bloqué pour les objectifs / projets
+// ---------------------------------------------------------------------
+export const heldInOf = (c: Contribution) => c.heldIn ?? 'w_savings';
+
+/** Montants bloqués par compte, objectif par objectif. */
+export function lockedByWallet(state: State): Map<string, { goalId: string; name: string; amount: number }[]> {
+  const out = new Map<string, { goalId: string; name: string; amount: number }[]>();
+  for (const g of state.goals ?? []) {
+    const per = new Map<string, number>();
+    for (const c of g.contributions) per.set(heldInOf(c), (per.get(heldInOf(c)) ?? 0) + c.amount);
+    for (const [w, amount] of per) {
+      if (amount <= 0) continue;
+      out.set(w, [...(out.get(w) ?? []), { goalId: g.id, name: g.name, amount }]);
+    }
+  }
+  return out;
+}
+export const lockedIn = (state: State, walletId: string) => (lockedByWallet(state).get(walletId) ?? []).reduce((a, x) => a + x.amount, 0);
+/** Montant bloqué pour un objectif sur un compte donné. */
+export const goalLockedIn = (g: Goal, walletId: string) => g.contributions.filter((c) => heldInOf(c) === walletId).reduce((a, c) => a + c.amount, 0);
+
+export interface Availability { balance: number; locked: number; available: number; goals: { goalId: string; name: string; amount: number }[] }
+/** Ce qu'on peut vraiment utiliser sur un compte (solde moins l'argent bloqué). */
+export function availability(state: State, walletId: string, until = '9999-12-31'): Availability {
+  const w = walletReports({ ...state, wallets: state.wallets.map((x) => ({ ...x, hidden: false })) }, until).find((x) => x.id === walletId);
+  const balance = w?.balance ?? 0;
+  const goals = lockedByWallet(state).get(walletId) ?? [];
+  const locked = w?.locked ?? 0;
+  return { balance, locked, available: balance - locked, goals };
+}
+
+/**
+ * Une sortie d'argent touche-t-elle l'argent bloqué ? Renvoie le blocage à afficher, ou null.
+ * (Si le solde est déjà insuffisant sans blocage, on laisse passer : le solde déclaré peut être en retard.)
+ */
+export function lockCheck(state: State, walletId: string | undefined, amount: number): (Availability & { missing: number }) | null {
+  if (!walletId || amount <= 0) return null;
+  const a = availability(state, walletId);
+  if (a.locked <= 0 || amount <= a.available) return null;
+  return { ...a, missing: amount - Math.max(0, a.available) };
 }

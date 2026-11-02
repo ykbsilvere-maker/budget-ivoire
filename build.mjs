@@ -16,7 +16,7 @@ await fs.mkdir(path.join(dist, 'assets'), { recursive: true });
 
 // 1) JavaScript
 // Modules Capacitor : les vrais s'ils sont installés (GitHub Actions), sinon un remplaçant web.
-const capMods = ['@capacitor/core', '@capacitor/local-notifications', '@capacitor/filesystem', '@capacitor/share', '@capacitor/text-zoom'];
+const capMods = ['@capacitor/core', '@capacitor/local-notifications', '@capacitor/filesystem', '@capacitor/share', '@capacitor/text-zoom', '@capacitor/app', '@aparajita/capacitor-biometric-auth'];
 const alias = {};
 for (const m of capMods) {
   try { require.resolve(m, { paths: [root] }); } catch { alias[m] = path.join(root, 'src/shims/capacitor.ts'); }

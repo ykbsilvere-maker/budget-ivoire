@@ -13,6 +13,39 @@ export const DEFAULT_GROUPS: Group[] = [
   { id: 'g_savings', name: 'Épargne', icon: 'piggy', color: '#2E9E5B' },
 ];
 
+/** Images proposées d'office (photos fournies + pictogrammes). Modifiables dans chaque fiche. */
+export const DEFAULT_IMAGES: Record<string, string> = {
+  c_cie: 'img/c_cie.png',
+  c_clothes: 'img/c_clothes.png',
+  c_family: 'img/c_family.png',
+  c_fees: 'img/c_fees.png',
+  c_food: 'img/c_food.jpg',
+  c_gifts: 'img/c_gifts.png',
+  c_health: 'img/c_health.jpg',
+  c_home: 'img/c_home.png',
+  c_leisure: 'img/c_leisure.jpg',
+  c_loan: 'img/c_loan.png',
+  c_other: 'img/c_other.png',
+  c_phone: 'img/c_phone.jpg',
+  c_rent: 'img/c_rent.jpg',
+  c_resto: 'img/c_resto.png',
+  c_savings: 'img/c_savings.png',
+  c_school: 'img/c_school.png',
+  c_sodeci: 'img/c_sodeci.png',
+  c_subs: 'img/c_subs.png',
+  c_transport: 'img/c_transport.jpg',
+  c_unexpected: 'img/c_unexpected.png',
+  w_bank: 'img/w_bank.jpg',
+  w_cash: 'img/w_cash.jpg',
+  w_moov: 'img/w_moov.png',
+  w_mtn: 'img/w_mtn.jpg',
+  w_om: 'img/w_om.jpg',
+  w_savings: 'img/w_savings.png',
+  w_wave: 'img/w_wave.jpg',
+};
+export const withDefaultImage = <T extends { id: string; logo?: string }>(x: T): T =>
+  x.logo === undefined && DEFAULT_IMAGES[x.id] ? { ...x, logo: DEFAULT_IMAGES[x.id] } : x;
+
 export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'c_rent', name: 'Loyer', icon: 'house', kind: 'obligatory', budget: 0, group: 'g_home', dueDay: 5 },
   { id: 'c_cie', name: 'Électricité CIE', icon: 'zap', kind: 'obligatory', budget: 0, group: 'g_home', dueDay: 15 },
@@ -82,9 +115,9 @@ export function initialState(): State {
     groups: DEFAULT_GROUPS.map((g) => ({ ...g })),
     goals: [],
     debts: [],
-    categories: DEFAULT_CATEGORIES.map((c) => ({ ...c })),
+    categories: DEFAULT_CATEGORIES.map((c) => withDefaultImage({ ...c })),
     incomeCategories: DEFAULT_INCOME.map((c) => ({ ...c })),
-    wallets: DEFAULT_WALLETS(),
+    wallets: DEFAULT_WALLETS().map(withDefaultImage),
     txs: [],
     settings: { expectedIncome: 0, warnPct: 85, paceMargin: 10, presets: [500, 1000, 2000, 5000, 10000, 25000] },
   };

@@ -6,6 +6,8 @@ const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SE
   auth: { persistSession: false },
 });
 
+const BUCKET = 'justificatifs';
+
 const storage: Storage = {
   async getSecret() {
     const { data } = await sb.from('bi_config').select('value').eq('key', 'auth_secret').maybeSingle();
@@ -32,6 +34,9 @@ const storage: Storage = {
     if (error) throw error;
   },
   async deleteUser(id) {
+    // Supprime aussi les justificatifs de l'utilisateur.
+    const { data: list } = await sb.storage.from(BUCKET).list(id, { limit: 1000 });
+    if (list?.length) await sb.storage.from(BUCKET).remove(list.map((f) => `${id}/${f.name}`));
     const { error } = await sb.from('bi_users').delete().eq('id', id);
     if (error) throw error;
   },
@@ -44,6 +49,19 @@ const storage: Storage = {
     if (error) throw error;
     const row = Array.isArray(data) ? data[0] : data;
     return row ? { version: row.version, updatedAt: row.updated_at } : null;
+  },
+  // Justificatifs : seau privé « justificatifs », un dossier par utilisateur.
+  async putFile(userId, id, bytes, mime) {
+    const { error } = await sb.storage.from(BUCKET).upload(`${userId}/${id}`, bytes, { contentType: mime, upsert: true });
+    if (error) throw error;
+  },
+  async getFile(userId, id) {
+    const { data, error } = await sb.storage.from(BUCKET).download(`${userId}/${id}`);
+    if (error || !data) return null;
+    return { bytes: new Uint8Array(await data.arrayBuffer()), mime: data.type || 'application/octet-stream' };
+  },
+  async deleteFile(userId, id) {
+    await sb.storage.from(BUCKET).remove([`${userId}/${id}`]);
   },
 };
 

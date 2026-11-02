@@ -16,7 +16,14 @@
       ],
       "@capacitor/text-zoom": [
         "src/shims/capacitor.ts"
+      ],
+      "@capacitor/app": [
+        "src/shims/capacitor.ts"
+      ],
+      "@aparajita/capacitor-biometric-auth": [
+        "src/shims/capacitor.ts"
       ]
-    }
+    },
+    "jsx": "react-jsx"
   }
 }

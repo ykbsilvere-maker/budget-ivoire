@@ -1,4 +1,4 @@
-import { LuArrowLeftRight, LuPlus, LuShieldCheck } from 'react-icons/lu';
+import { LuArrowLeftRight, LuLock, LuPlus, LuShieldCheck } from 'react-icons/lu';
 import type { MonthReport, State, Tx, WalletReport } from '../engine';
 import { fmt } from '../engine';
 import { Btn, Money, cx } from '../ui';
@@ -78,7 +78,9 @@ function WalletCard({ w, color, onClick }: { w: WalletReport; color: string; onC
       </span>
       <span>
         <span className={cx('num block whitespace-nowrap text-[16px] min-[380px]:text-[19px] font-extrabold leading-tight', w.balance < 0 && 'text-[#FFC9C9]')}>{fmt(w.balance)}<span className="ml-1 text-[0.6em] opacity-80">XOF</span></span>
-        <span className="block text-[10px] opacity-75">{w.source === 'declared' ? 'Solde déclaré' : 'Synchronisé'}</span>
+        {w.locked > 0
+          ? <span className="block truncate text-[10px] font-semibold opacity-90"><LuLock className="mr-0.5 inline align-[-1px]" size={10} />{fmt(w.locked)} bloqués (projets)</span>
+          : <span className="block text-[10px] opacity-75">{w.source === 'declared' ? 'Solde déclaré' : 'Synchronisé'}</span>}
       </span>
     </button>
   );

@@ -2,6 +2,7 @@ import { type ReactNode, useEffect } from 'react';
 import { LuX } from 'react-icons/lu';
 import type { Health } from './engine';
 import { fmt } from './engine';
+import { useBackHandler } from './services/back';
 
 export const cx = (...c: (string | false | undefined | null)[]) => c.filter(Boolean).join(' ');
 
@@ -72,6 +73,7 @@ export function Sheet({
 }: {
   open: boolean; onClose: () => void; title: string; icon?: ReactNode; children: ReactNode; footer?: ReactNode; tall?: boolean;
 }) {
+  useBackHandler(open, onClose);
   useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose();

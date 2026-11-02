@@ -18,6 +18,7 @@ export function mergeStates(local: State, remote: State): State {
     ...base,
     txs: [...byId.values()].sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt ?? '').localeCompare(b.createdAt ?? '')),
     deletedTxIds: [...deleted].slice(-3000),
+    skipped: [...new Set([...(local.skipped ?? []), ...(remote.skipped ?? [])])].slice(-2000),
     updatedAt: localNewer ? local.updatedAt : remote.updatedAt,
   };
 }

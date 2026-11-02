@@ -8,8 +8,10 @@ export const LocalNotifications = {
   createChannel: notAvailable, getPending: async () => ({ notifications: [] }), cancel: notAvailable, schedule: notAvailable,
   addListener: async () => ({ remove: async () => {} }),
 };
-export const Filesystem = { writeFile: notAvailable };
+export const Filesystem = { writeFile: notAvailable, readFile: notAvailable, deleteFile: notAvailable };
 export const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS' };
 export const Encoding = { UTF8: 'utf8' };
 export const Share = { share: notAvailable };
 export const TextZoom = { getPreferred: async () => ({ value: 1 }), get: async () => ({ value: 1 }), set: async () => {} };
+export const App = { addListener: async (_e: string, _h: () => void) => ({ remove: async () => {} }), exitApp: async () => {}, minimizeApp: async () => {} };
+export const BiometricAuth = { checkBiometry: async () => ({ isAvailable: false, strongBiometryIsAvailable: false }), authenticate: notAvailable };

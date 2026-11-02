@@ -8,14 +8,25 @@ export const isNative = () => {
   try { return Capacitor.isNativePlatform(); } catch { return false; }
 };
 
-/** Enregistre / partage un fichier : téléchargement sur le web, menu « Partager » dans l'APK. */
-export async function saveFile(name: string, content: string, mime: string) {
+export const blobToBase64 = (b: Blob) =>
+  new Promise<string>((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1] ?? '');
+    r.onerror = rej;
+    r.readAsDataURL(b);
+  });
+
+/** Enregistre / partage un fichier (texte ou binaire) : téléchargement sur le web, menu « Partager » dans l'APK. */
+export async function saveFile(name: string, content: string | Blob, mime: string) {
+  const safe = name.replace(/[^\w.\-]+/g, '_');
   if (isNative()) {
-    const res = await Filesystem.writeFile({ path: name, data: content, directory: Directory.Cache, encoding: Encoding.UTF8 } as any);
+    const res = typeof content === 'string'
+      ? await Filesystem.writeFile({ path: safe, data: content, directory: Directory.Cache, encoding: Encoding.UTF8 } as any)
+      : await Filesystem.writeFile({ path: safe, data: await blobToBase64(content), directory: Directory.Cache } as any);
     await Share.share({ title: name, files: [(res as any).uri], dialogTitle: 'Enregistrer ou envoyer' } as any);
     return;
   }
-  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const url = URL.createObjectURL(typeof content === 'string' ? new Blob([content], { type: mime }) : content);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -38,4 +49,11 @@ export async function limitTextZoom(max = 1.15) {
     const { value } = await TextZoom.getPreferred();
     await TextZoom.set({ value: Math.min(Math.max(value, 0.85), max) });
   } catch { /* module absent : on garde le réglage du téléphone */ }
+}
+
+/** Télécharge une image (chemin intégré « img/… » ou image importée « data:… »). */
+export async function saveImage(src: string, baseName: string) {
+  const blob = await (await fetch(src)).blob();
+  const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
+  await saveFile(`${baseName.replace(/\s+/g, '-').toLowerCase() || 'image'}.${ext}`, blob, blob.type || 'image/jpeg');
 }

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LuCheck, LuDownload, LuLock, LuMoon, LuPalette, LuSparkles, LuSun, LuTrash2, LuUpload, LuShieldCheck, LuDatabase } from 'react-icons/lu';
-import type { Category, CategoryKind, MonthReport, Plan, State, Tx, Wallet } from '../engine';
+import type { Attachment, Category, CategoryKind, MonthReport, Plan, State, Tx, Wallet } from '../engine';
+import { AttachmentsField } from './PaySheet';
+import { removeAttachment } from '../services/files';
 import { WEEKDAYS_FR, applyRebalance, fmt, monthKey, occurrences, proposeRebalance, toCSV, walletReports, toISODate, type RebalanceProposal } from '../engine';
 import { buildICS, describePlan, googleCalendarUrl, remindersOf, applyNativeReminders, notificationPermission } from '../services/reminders';
 import { isNative, openExternal } from '../services/native';
@@ -9,7 +11,9 @@ import { download, uid } from '../store';
 import { Btn, Label, Money, Segmented, Sheet, cx, inputCls } from '../ui';
 import { APP, CHANGELOG } from '../config';
 import { CARD_COLORS } from '../screens/Money';
-import { Glyph, ICON_SECTIONS, fileToLogo } from '../icons';
+import { Glyph, ICON_SECTIONS, fileToLogo, suggestIcon } from '../icons';
+import { DEFAULT_IMAGES } from '../data';
+import { saveImage } from '../services/native';
 import { LuImagePlus, LuCalendarPlus, LuBell } from 'react-icons/lu';
 
 // ---------------------------------------------------------------------
@@ -18,8 +22,12 @@ import { LuImagePlus, LuCalendarPlus, LuBell } from 'react-icons/lu';
 export function EditTxSheet({ tx, onClose, store }: { tx: Tx | null; onClose: () => void; store: Store }) {
   const [d, setD] = useState<Tx | null>(tx);
   const [confirmDel, setConfirmDel] = useState(false);
-  useEffect(() => { setD(tx); setConfirmDel(false); }, [tx]);
+  const [files, setFiles] = useState<Attachment[]>([]);
+  useEffect(() => { setD(tx); setConfirmDel(false); setFiles(tx?.attachments ?? []); }, [tx]);
   if (!tx || !d) return null;
+  const before = tx.attachments ?? [];
+  // Fichiers ajoutés puis abandonnés : on les supprime ; fichiers retirés : supprimés à l'enregistrement.
+  const cancel = () => { files.filter((f) => !before.some((b) => b.id === f.id)).forEach(removeAttachment); onClose(); };
   const { state } = store;
   const cats = tx.type === 'income' ? state.incomeCategories : state.categories;
   const save = () => {
@@ -28,13 +36,18 @@ export function EditTxSheet({ tx, onClose, store }: { tx: Tx | null; onClose: ()
       if (d[k] !== tx[k]) (patch as any)[k] = d[k];
     });
     if (Object.keys(patch).length) store.updateTx(tx.id, patch);
+    const changed = files.length !== before.length || files.some((f, i) => f.id !== before[i]?.id);
+    if (changed) {
+      before.filter((b) => !files.some((f) => f.id === b.id)).forEach(removeAttachment);
+      store.setAll((s) => ({ ...s, txs: s.txs.map((t) => (t.id === tx.id ? { ...t, attachments: files.length ? files : undefined } : t)) }));
+    }
     onClose();
   };
   return (
-    <Sheet open onClose={onClose} title="Modifier l’opération"
+    <Sheet open onClose={cancel} title="Modifier l’opération"
       footer={
         <div className="grid grid-cols-[auto_1fr] gap-2 pb-1">
-          <Btn variant="danger" onClick={() => (confirmDel ? (store.deleteTx(tx.id), onClose()) : setConfirmDel(true))}>
+          <Btn variant="danger" onClick={() => (confirmDel ? (store.deleteTx(tx.id), [...before, ...files].forEach(removeAttachment), onClose()) : setConfirmDel(true))}>
             <LuTrash2 /> {confirmDel ? 'Confirmer' : ''}
           </Btn>
           <Btn onClick={save}><LuCheck /> Enregistrer</Btn>
@@ -69,6 +82,8 @@ export function EditTxSheet({ tx, onClose, store }: { tx: Tx | null; onClose: ()
       <input type="date" value={d.date} onChange={(e) => setD({ ...d, date: e.target.value })} className={inputCls} />
       <Label>Note</Label>
       <input value={d.note ?? ''} onChange={(e) => setD({ ...d, note: e.target.value })} className={inputCls} />
+      <Label>Justificatifs</Label>
+      <AttachmentsField value={files} onChange={setFiles} keepOnRemove />
       {tx.history?.length ? (
         <>
           <Label>Historique des modifications</Label>
@@ -189,10 +204,13 @@ const KINDS: { value: CategoryKind; label: string; hint: string }[] = [
 
 export function CategorySheet({ id, onClose, store }: { id: string | null; onClose: () => void; store: Store }) {
   const existing = store.state.categories.find((c) => c.id === id);
-  const [c, setC] = useState<Category | null>(null);
+  const [c, setC0] = useState<Category | null>(null);
+  const autoIcon = useRef(true);
+  const setC = (n: Category) => { if ((n as any).autoIcon === false) { autoIcon.current = false; delete (n as any).autoIcon; } setC0(n); };
   useEffect(() => {
-    if (id === null) { setC(null); return; }
-    setC(existing ? { ...existing } : { id: uid('c'), name: '', icon: 'tag', kind: 'flexible', budget: 10000, group: 'g_other' });
+    autoIcon.current = true;
+    if (id === null) { setC0(null); return; }
+    setC0(existing ? { ...existing } : { id: uid('c'), name: '', icon: 'tag', kind: 'flexible', budget: 10000, group: 'g_other' });
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!c) return null;
   const used = store.state.txs.some((t) => t.categoryId === c.id);
@@ -214,7 +232,7 @@ export function CategorySheet({ id, onClose, store }: { id: string | null; onClo
         </div>
       }>
       <Label>Nom</Label>
-      <input value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} className={inputCls} placeholder="Ex : Cotisation association" />
+      <input value={c.name} onChange={(e) => setC({ ...c, name: e.target.value, icon: !existing && autoIcon.current ? suggestIcon(e.target.value) : c.icon })} className={inputCls} placeholder="Ex : Cotisation association" />
       <Label>Budget du mois (XOF)</Label>
       <input inputMode="numeric" value={c.budget} onChange={(e) => setC({ ...c, budget: Number(e.target.value.replace(/\D/g, '')) || 0 })} className={cx(inputCls, 'num text-lg font-bold')} />
       <Label>Groupe</Label>
@@ -237,7 +255,7 @@ export function CategorySheet({ id, onClose, store }: { id: string | null; onClo
           <input type="range" min={0} max={50} step={5} value={Math.round((c.maxCut ?? 0.2) * 100)} onChange={(e) => setC({ ...c, maxCut: Number(e.target.value) / 100 })} className="w-full" />
         </>
       )}
-      <IconField icon={c.icon} logo={c.logo} name={c.name} onIcon={(icon) => setC({ ...c, icon, logo: undefined })} onLogo={(logo) => setC({ ...c, logo })} />
+      <IconField id={c.id} icon={c.icon} logo={c.logo} name={c.name} onIcon={(icon) => setC({ ...c, icon, logo: '', autoIcon: false } as Category)} onLogo={(logo) => setC({ ...c, logo })} />
       {existing && used && <p className="mt-3 text-[11.5px] text-muted">Cette catégorie a un historique : elle peut être masquée mais pas supprimée, pour ne pas casser tes anciennes opérations.</p>}
     </Sheet>
   );
@@ -270,7 +288,7 @@ export function WalletSheet({ id, onClose, store }: { id: string | null; onClose
       footer={<div className="pb-1"><Btn onClick={save} className="w-full"><LuCheck /> Enregistrer</Btn></div>}>
       <Label>Nom</Label>
       <input value={w.name} onChange={(e) => setW({ ...w, name: e.target.value })} className={inputCls} placeholder="Ex : Djamo, Tontine…" />
-      <IconField icon={w.icon} logo={w.logo} name={w.name} onIcon={(icon) => setW({ ...w, icon, logo: undefined })} onLogo={(logo) => setW({ ...w, logo })} allowInitials />
+      <IconField id={w.id} icon={w.icon} logo={w.logo} name={w.name} onIcon={(icon) => setW({ ...w, icon, logo: '' })} onLogo={(logo) => setW({ ...w, logo })} allowInitials />
       <Label>Solde réel actuel (XOF)</Label>
       <input inputMode="numeric" value={declared} onChange={(e) => setDeclared(e.target.value)} className={cx(inputCls, 'num text-lg font-bold')} />
       {existing && <p className="mt-1 text-[11.5px] text-muted">Solde calculé par l’application : {fmt(current)} XOF. Saisis le montant que tu vois vraiment sur ton téléphone ou dans ta poche.</p>}
@@ -307,8 +325,8 @@ export const THEMES: { id: ThemeId; name: string; desc: string; hero: string; bg
 ];
 
 export function SettingsSheet({
-  open, onClose, store, ui, setUi, onToast, syncLabel, onAccount,
-}: { open: boolean; onClose: () => void; store: Store; ui: UiPrefs; setUi: (u: UiPrefs) => void; onToast: (m: string) => void; syncLabel: string; onAccount: () => void }) {
+  open, onClose, store, ui, setUi, onToast, syncLabel, onAccount, privacy,
+}: { open: boolean; onClose: () => void; store: Store; ui: UiPrefs; setUi: (u: UiPrefs) => void; onToast: (m: string) => void; syncLabel: string; onAccount: () => void; privacy?: React.ReactNode }) {
   const { state } = store;
   const fileRef = useRef<HTMLInputElement>(null);
   const [confirm, setConfirm] = useState(false);
@@ -370,6 +388,8 @@ export function SettingsSheet({
         onBlur={() => { const p = presets.split(/[,;]/).map((x) => Number(x.replace(/\D/g, ''))).filter((x) => x > 0).slice(0, 8); if (p.length) store.setSettings({ presets: p }); }}
         className={inputCls} />
 
+      {privacy}
+
       <RemindersSettings store={store} onToast={onToast} />
 
       <Label><span className="inline-flex items-center gap-1"><LuDatabase /> Mes données</span></Label>
@@ -418,27 +438,35 @@ export function SettingsSheet({
 // Choix d'icône simple ou import de son propre logo (image)
 // ---------------------------------------------------------------------
 function IconField({
-  icon, logo, name, onIcon, onLogo, allowInitials,
-}: { icon: string; logo?: string; name: string; onIcon: (i: string) => void; onLogo: (l?: string) => void; allowInitials?: boolean }) {
+  id, icon, logo, name, onIcon, onLogo, allowInitials,
+}: { id: string; icon: string; logo?: string; name: string; onIcon: (i: string) => void; onLogo: (l?: string) => void; allowInitials?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
+  const [pick, setPick] = useState(false);
+  const def = DEFAULT_IMAGES[id];
   return (
     <>
-      <Label>Logo ou icône</Label>
+      <Label>Image</Label>
       <div className="flex items-center gap-3 rounded-2xl bg-surface2 p-3">
-        <Glyph icon={icon} logo={logo} label={name || '?'} size={48} />
-        <div className="flex-1 text-[12px] text-muted">Importe le logo de ton choix (photo ou image enregistrée sur ton téléphone), ou choisis une icône.</div>
+        <Glyph icon={icon} logo={logo} label={name || '?'} size={56} />
+        <div className="min-w-0 flex-1 text-[12px] text-muted">
+          {logo ? 'Image utilisée partout dans l’application.' : 'Icône proposée d’après le nom. Tu peux la garder telle quelle.'}
+        </div>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <Btn variant="ghost" onClick={() => ref.current?.click()}><LuImagePlus /> Importer un logo</Btn>
-        {logo ? <Btn variant="soft" onClick={() => onLogo(undefined)}>Retirer le logo</Btn> : allowInitials ? <Btn variant="soft" onClick={() => onIcon('')}>Initiales</Btn> : <span />}
+        <Btn variant="ghost" onClick={() => ref.current?.click()}><LuImagePlus /> {logo ? 'Autre photo' : 'Photo'}</Btn>
+        <Btn variant="ghost" onClick={() => setPick(!pick)}>{pick ? 'Fermer' : 'Icône'}</Btn>
+        {logo && <Btn variant="soft" onClick={() => saveImage(logo, name || 'image').catch(() => {})}><LuDownload /> Télécharger</Btn>}
+        {logo ? <Btn variant="soft" onClick={() => onLogo('')}>Retirer la photo</Btn>
+          : def ? <Btn variant="soft" onClick={() => onLogo(def)}>Image d’origine</Btn>
+          : allowInitials ? <Btn variant="soft" onClick={() => onIcon('')}>Initiales</Btn> : null}
       </div>
       <input ref={ref} type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files?.[0]; if (f) onLogo(await fileToLogo(f)); e.target.value = ''; }} />
-      {ICON_SECTIONS.map((sec) => (
+      {pick && ICON_SECTIONS.map((sec) => (
         <div key={sec.name}>
           <div className="mb-1 mt-3 text-[11px] font-bold uppercase tracking-wide text-muted">{sec.name}</div>
           <div className="grid grid-cols-8 gap-1.5">
             {sec.keys.map((k) => (
-              <button key={k} onClick={() => onIcon(k)} aria-label={k}>
+              <button key={k} onClick={() => { onIcon(k); setPick(false); }} aria-label={k}>
                 <Glyph icon={k} size={34} active={!logo && icon === k} />
               </button>
             ))}

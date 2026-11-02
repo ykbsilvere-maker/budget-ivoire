@@ -59,6 +59,8 @@ export const ICON_SECTIONS: { name: string; keys: string[] }[] = [
 ];
 export const ICON_CHOICES = ICON_SECTIONS.flatMap((s) => s.keys);
 
+const isPhoto = (l: string) => l.startsWith('img/') || l.startsWith('data:image/jpeg');
+
 /** Icône d'une catégorie / d'un portefeuille : image importée, sinon icône simple, sinon initiales. */
 export function Glyph({
   icon, logo, label, size = 40, active, className, plain,
@@ -67,8 +69,8 @@ export function Glyph({
   const radius = Math.round(size * 0.32);
   if (logo)
     return (
-      <span className={cx('shrink-0 overflow-hidden bg-white', className)} style={{ width: size, height: size, borderRadius: radius, border: '1px solid var(--s-line)' }}>
-        <img src={logo} alt={label ?? ''} className="h-full w-full object-contain" />
+      <span className={cx('block shrink-0 overflow-hidden bg-white', className)} style={{ width: size, height: size, borderRadius: radius, border: isPhoto(logo) ? undefined : '1px solid var(--s-line)' }}>
+        <img src={logo} alt={label ?? ''} draggable={false} className={cx('h-full w-full', isPhoto(logo) ? 'object-cover' : 'object-contain')} />
       </span>
     );
   return (
@@ -81,14 +83,46 @@ export function Glyph({
   );
 }
 
+/** Mots-clés → icône : l'icône est proposée d'office dès qu'on tape un nom (modifiable ensuite). */
+const KEYWORDS: [RegExp, string][] = [
+  [/loyer|maison|logement|appart|villa|studio/, 'house'], [/cie|[ée]lectri|courant|lumi[èe]re/, 'zap'], [/sodeci|eau\b|^eau/, 'droplet'],
+  [/gaz|bouteille/, 'flame'], [/[ée]cole|scolarit|universit|cours|formation|fourniture/, 'school'], [/livre|biblio/, 'book'],
+  [/cr[ée]dit|pr[eê]t|banque|dette|remboursement/, 'bank'], [/march[ée]|course|supermarch|alimentation|vivre/, 'cart'],
+  [/taxi|yango|gbaka|woro|transport|uber|heetch/, 'taxi'], [/bus|sotra|car\b/, 'bus'], [/carburant|essence|gasoil|station/, 'fuel'],
+  [/voiture|auto|garage|vidange|assurance auto/, 'car'], [/moto|v[ée]lo/, 'bike'], [/avion|vol\b|voyage|billet/, 'plane'],
+  [/pharma|m[ée]dic|pilule/, 'pill'], [/sant[ée]|m[ée]decin|docteur|clinique|consult/, 'health'], [/h[ôo]pital/, 'hospital'],
+  [/b[ée]b[ée]|couche|lait b/, 'baby'], [/famille|parent|maman|papa|enfant/, 'family'], [/d[îi]me|[ée]glise|offrande|qu[êe]te/, 'church'],
+  [/mosqu[ée]e|zakat|ramadan|tabaski/, 'moon'], [/don\b|dons|aide|solidarit/, 'gift'], [/cadeau|anniversaire/, 'present'],
+  [/mariage|bapt[êe]me|f[êe]te|c[ée]r[ée]monie|fun[ée]railles|d[ée]c[èe]s/, 'party'], [/frais|commission/, 'fees'],
+  [/maquis|resto|restaurant|garba|allocco|attiéké|attieke|repas|d[ée]jeuner|d[îi]ner/, 'food'], [/caf[ée]|petit.d[ée]j/, 'coffee'],
+  [/bi[èe]re|boisson|bar\b|vin\b/, 'beer'], [/pain|boulang|p[âa]tisserie/, 'croissant'], [/poisson/, 'fish'], [/viande|poulet|boucher/, 'drumstick'],
+  [/sport|gym|salle|foot|basket/, 'sport'], [/loisir|sortie|concert|cin[ée]ma|plage/, 'party'], [/jeu|game|console|playstation/, 'game'],
+  [/musique|spotify|deezer|apple music/, 'music'], [/netflix|canal|prime video|disney|youtube|t[ée]l[ée]|tv/, 'tv'],
+  [/internet|wifi|box|fibre/, 'wifi'], [/t[ée]l[ée]phone|forfait|cr[ée]dit tel|recharge|unit[ée]s|data/, 'phone'],
+  [/habit|v[êe]tement|pagne|chaussure|shopping|tissu/, 'shirt'], [/sac|accessoire/, 'bag'], [/coiff|tresse|beaut[ée]|ongle|maquill|cosm[ée]t/, 'beauty'],
+  [/m[ée]nage|entretien|nettoy|savon|lessive/, 'clean'], [/meuble|d[ée]co/, 'sofa'], [/travaux|r[ée]paration|plomb|ma[çc]on/, 'wrench'],
+  [/[ée]pargne|tontine|[ée]conomie|r[ée]serve/, 'piggy'], [/invest|bourse|action/, 'growth'], [/assurance|mutuelle/, 'shield'],
+  [/imp[ôo]t|taxe|amende|avocat|notaire/, 'law'], [/salaire|paie|travail|boulot/, 'work'], [/commerce|boutique|vente|business/, 'store'],
+  [/prime|bonus/, 'star'], [/chien|chat|animal/, 'dog'], [/cigarette|tabac/, 'smoke'], [/ordinateur|laptop|pc\b/, 'laptop'],
+  [/imp?r[ée]vu|urgence/, 'alert'], [/esp[èe]ce|cash|liquide/, 'cash'], [/carte|visa|mastercard/, 'card'],
+  [/wave|orange money|mtn|moov|momo|mobile money|portefeuille/, 'wallet'], [/terrain|construction|chantier|projet/, 'hammer'],
+];
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+export function suggestIcon(name: string, fallback = 'tag'): string {
+  const n = name.toLowerCase();
+  const m = norm(name);
+  for (const [re, key] of KEYWORDS) if (re.test(n) || re.test(m)) return key;
+  return fallback;
+}
+
 export const initials = (name: string) => {
   const words = name.split(/[\s-]+/).filter(Boolean);
   if (words[0] && words[0].length <= 4 && words[0] === words[0].toUpperCase() && /[A-Z]/.test(words[0])) return words[0];
   return words.slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 };
 
-/** Réduit une image importée (logo) à 128 px pour un stockage léger sur l'appareil. */
-export async function fileToLogo(file: File, max = 128): Promise<string> {
+/** Recadre une image importée en carré (192 px, JPEG) pour un stockage léger sur l'appareil. */
+export async function fileToLogo(file: File, max = 192): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((res, rej) => {
@@ -97,12 +131,15 @@ export async function fileToLogo(file: File, max = 128): Promise<string> {
       i.onerror = rej;
       i.src = url;
     });
-    const s = Math.min(1, max / Math.max(img.width, img.height));
+    const side = Math.min(img.width, img.height);
+    const out = Math.min(max, side);
     const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.round(img.width * s));
-    c.height = Math.max(1, Math.round(img.height * s));
-    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL('image/png');
+    c.width = c.height = Math.max(1, out);
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.85);
   } finally {
     URL.revokeObjectURL(url);
   }

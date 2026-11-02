@@ -23,6 +23,17 @@ for (let i = 0; i < 5; i++) await call('POST', '/api/auth/login', { email: 'awa@
 r = await call('POST', '/api/auth/login', { email: 'awa@mail.ci', password: 'motdepasse1' }); assert.equal(r.status, 429);
 r = await call('POST', '/api/auth/signup', { email: 'koffi@mail.ci', password: 'motdepasse2' });
 r = await call('GET', '/api/data', null, r.body.token); assert.equal(r.body.state, null);
+// Justificatifs : privés, par utilisateur
+const pdf = Buffer.from('%PDF-1.4 test').toString('base64');
+r = await call('PUT', '/api/files/att_123456', { mime: 'application/pdf', data: pdf }, t2); assert.equal(r.status, 201);
+r = await call('PUT', '/api/files/att_123457', { mime: 'text/html', data: pdf }, t2); assert.equal(r.status, 400);
+r = await call('GET', '/api/files/att_123456', null, t2); assert.equal(r.body.data, pdf); assert.equal(r.body.mime, 'application/pdf');
+const tk = (await call('POST', '/api/auth/login', { email: 'koffi@mail.ci', password: 'motdepasse2' })).body.token;
+r = await call('GET', '/api/files/att_123456', null, tk); assert.equal(r.status, 404); // un autre compte ne voit rien
+r = await call('GET', '/api/files/../x', null, t2); assert.equal(r.status, 404);
+r = await call('DELETE', '/api/files/att_123456', null, t2); assert.equal(r.status, 200);
+r = await call('GET', '/api/files/att_123456', null, t2); assert.equal(r.status, 404);
+r = await call('PUT', '/api/files/att_123458', { mime: 'image/jpeg', data: pdf }, t2); assert.equal(r.status, 201);
 r = await call('DELETE', '/api/account', { password: 'motdepasse1' }, t2); assert.equal(r.status, 200);
 r = await call('GET', '/api/data', null, t2); assert.equal(r.status, 401);
-console.log('API OK — 15 vérifications');
+console.log('API OK — 24 vérifications');

@@ -1,13 +1,14 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import { LuArrowLeft, LuArrowRight, LuCheck, LuDelete } from 'react-icons/lu';
 import type { Category, State } from '../engine';
-import { fmt, toISODate } from '../engine';
+import { fmtN, toISODate } from '../engine';
 import { DEFAULT_GROUPS, SUBSCRIPTION_CHOICES, SUBSCRIPTION_ICONS } from '../data';
 import type { Store } from '../store';
 import { uid } from '../store';
 import { APP, Logo } from '../config';
 import { cx, inputCls } from '../ui';
-import { Glyph } from '../icons';
+import { Glyph, suggestIcon } from '../icons';
+import { useBackHandler } from '../services/back';
 
 // ---------------------------------------------------------------------
 // Démarrage pas à pas : le revenu, puis chaque charge une par une.
@@ -73,7 +74,8 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
   const restant = income - allocated;
 
   const next = () => { setPhase('amount'); setI((x) => Math.min(steps.length - 1, x + 1)); };
-  const back = () => { setPhase('amount'); setI((x) => Math.max(0, x - 1)); };
+  const back = () => { if (phase === 'day') { setPhase('amount'); return; } setI((x) => Math.max(0, x - 1)); };
+  useBackHandler(i > 0 || phase === 'day', back);
 
   function finish() {
     const today = toISODate(new Date());
@@ -81,7 +83,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
     const salaryWallet = usedIds.includes('w_bank') ? 'w_bank' : [...usedIds].sort((a, b) => (balances[b] ?? 0) - (balances[a] ?? 0))[0] ?? 'w_cash';
     const subCats: Category[] = subs
       .filter((n) => amounts[subKey(n)] > 0)
-      .map((n) => ({ id: uid('c_sub'), name: n, icon: SUBSCRIPTION_ICONS[n] ?? '', kind: 'obligatory', budget: amounts[subKey(n)], group: 'g_subs', dueDay: days[subKey(n)] }));
+      .map((n) => ({ id: uid('c_sub'), name: n, icon: SUBSCRIPTION_ICONS[n] ?? suggestIcon(n, ''), kind: 'obligatory', budget: amounts[subKey(n)], group: 'g_subs', dueDay: days[subKey(n)] }));
     store.setAll((s: State) => ({
       ...s,
       settings: { ...s.settings, expectedIncome: income },
@@ -115,7 +117,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
         <Logo size={44} />
         <div className="mt-3 text-[13px] font-semibold text-muted">Bienvenue sur {APP.name}</div>
         <h1 className="mt-1 text-[22px] font-extrabold leading-tight">Pour commencer,<br />inscris ton revenu du mois</h1>
-        <div className="mt-5"><AllocRing income={Math.max(income, 1)} segments={[]} big={fmt(income)} unit="XOF" small="par mois" size={190} /></div>
+        <div className="mt-5"><AllocRing income={Math.max(income, 1)} segments={[]} big={fmtN(income)} unit="XOF" small="par mois" size={190} /></div>
         {onLogin && (
           <button onClick={onLogin} className="mt-3 rounded-full bg-surface2 px-4 py-2 text-[13px] font-semibold text-primary">
             J’ai déjà un compte · me reconnecter
@@ -145,7 +147,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
     body = (
       <>
         <StepIcons steps={catSteps} current={key} amounts={amounts} state={state} />
-        <div className="mt-2 flex justify-center"><AllocRing income={income} segments={segments} big={fmt(restant)} unit="XOF" small="restant" size={150} /></div>
+        <div className="mt-2 flex justify-center"><AllocRing income={income} segments={segments} big={fmtN(restant)} unit="XOF" small="restant" size={150} /></div>
         <div className="card mt-3 p-4">
           <div className="flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-xl text-white" style={{ background: groupColor(gid) }}>
@@ -159,7 +161,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
           </div>
           <button onClick={() => setPhase('amount')} className={cx('mx-auto mt-3 block max-w-full whitespace-nowrap rounded-2xl px-4 py-2 num text-[26px] min-[380px]:text-[32px] font-extrabold', phase === 'amount' ? 'bg-surface2' : '')}
             style={{ color: value ? groupColor(gid) : 'var(--s-muted)' }}>
-            {fmt(value)} XOF
+            {fmtN(value)} XOF
           </button>
           {due && phase === 'day' && (
             <>
@@ -194,7 +196,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
     body = (
       <>
         <StepIcons steps={catSteps} current="subs" amounts={amounts} state={state} />
-        <div className="mt-2 flex justify-center"><AllocRing income={income} segments={segments} big={fmt(restant)} unit="XOF" small="restant" size={150} /></div>
+        <div className="mt-2 flex justify-center"><AllocRing income={income} segments={segments} big={fmtN(restant)} unit="XOF" small="restant" size={150} /></div>
         <div className="card mt-3 p-4">
           <div className="flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-xl text-white" style={{ background: groupColor('g_subs') }}>
@@ -211,7 +213,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
               return (
                 <button key={n} onClick={() => setSubs(on ? subs.filter((x) => x !== n) : [...subs, n])}
                   className={cx('flex flex-col items-center gap-1 rounded-2xl border p-2 text-[11.5px] font-semibold', on ? 'border-primary bg-primary/10' : 'border-line')}>
-                  <Glyph icon={SUBSCRIPTION_ICONS[n]} label={n} size={34} active={on} />
+                  <Glyph icon={SUBSCRIPTION_ICONS[n] ?? suggestIcon(n, '')} label={n} size={34} active={on} />
                   <span className="w-full truncate">{n}</span>
                 </button>
               );
@@ -227,19 +229,19 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
         <h1 className="pt-2 text-[22px] font-extrabold">Ton budget est prêt 🎉</h1>
         <p className="mt-1 text-[13px] text-muted">Voici comment ton revenu est réparti chaque mois.</p>
         <div className="mt-4 flex justify-center">
-          <AllocRing income={income} segments={segments} big={fmt(restant)} unit="XOF" small={restant >= 0 ? 'libre chaque mois' : 'à trouver'} size={210} stroke={22} />
+          <AllocRing income={income} segments={segments} big={fmtN(restant)} unit="XOF" small={restant >= 0 ? 'libre chaque mois' : 'à trouver'} size={210} stroke={22} />
         </div>
         <div className="mt-4 space-y-1.5 text-left">
           {segments.map((g) => (
             <div key={g.id} className="flex items-center gap-3 rounded-2xl bg-surface px-3 py-2" style={{ border: '1px solid var(--s-line)' }}>
               <span className="h-3 w-3 rounded-full" style={{ background: g.color }} />
               <span className="flex-1 text-[14px] font-semibold">{g.name}</span>
-              <b className="num text-[14px]">{fmt(g.value)} XOF</b>
+              <b className="num text-[14px]">{fmtN(g.value)} XOF</b>
               <span className="w-10 text-right text-[12px] text-muted">{Math.round((g.value / Math.max(1, income)) * 100)}%</span>
             </div>
           ))}
         </div>
-        {restant < 0 && <p className="mt-3 text-[12.5px] text-danger">Tes charges dépassent ton revenu de {fmt(-restant)} XOF : tu pourras ajuster dans l’onglet Budget.</p>}
+        {restant < 0 && <p className="mt-3 text-[12.5px] text-danger">Tes charges dépassent ton revenu de {fmtN(-restant)} XOF : tu pourras ajuster dans l’onglet Budget.</p>}
       </div>
     );
     footer = <PrimaryBtn onClick={next}>Continuer <LuArrowRight /></PrimaryBtn>;
@@ -253,7 +255,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
             <div key={w.id} className="card flex items-center gap-3 p-2.5">
               <Glyph icon={w.icon} logo={w.logo} label={w.name} size={38} />
               <span className="flex-1 text-[13.5px] font-semibold leading-tight">{w.name}</span>
-              <input inputMode="numeric" value={balances[w.id] ? fmt(balances[w.id]) : ''} placeholder="0" aria-label={`Solde ${w.name}`}
+              <input inputMode="numeric" value={balances[w.id] ? fmtN(balances[w.id]) : ''} placeholder="0" aria-label={`Solde ${w.name}`}
                 onChange={(e) => setBalances({ ...balances, [w.id]: Number(e.target.value.replace(/\D/g, '')) || 0 })}
                 className={cx(inputCls, 'num w-[110px] px-3 py-2 text-right font-bold')} />
             </div>

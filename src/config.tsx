@@ -31,6 +31,15 @@ export function Logo({ size = 36 }: { size?: number }) {
 
 /** Nouveautés affichées dans Réglages › À propos (la plus récente en premier). */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
+  { version: '1.4', date: '2 novembre 2026', items: [
+    'Images proposées d’office (tes photos + pictogrammes), téléchargeables ; icône devinée d’après le nom',
+    '« À régler » : un geste « ✓ Payé » pour chaque dépense prévue (ou « Pas cette fois »)',
+    'Justificatifs : photo ou PDF joint à une dépense, à voir et télécharger, sauvegardés en ligne',
+    'Masquer les montants (œil) ; code à 4 chiffres ou empreinte pour les afficher, ouvrir l’app ou des onglets',
+    'Projets : description, banque d’approvisionnement, versement mensuel avec rappel',
+    'Argent bloqué pour un projet : impossible de le dépenser sans le débloquer dans le projet',
+    'Bouton Retour du téléphone : revient à l’écran précédent au lieu de quitter',
+  ] },
   { version: '1.3.1', date: '2 novembre 2026', items: [
     'Textes et montants qui ne débordent plus des cases, même sur petit écran',
     'Noms des groupes en entier, montants sous la barre',

@@ -1,7 +1,7 @@
 // Rappels : notifications du téléphone (APK) et ajout au calendrier (Google Agenda, fichier .ics).
 import { LocalNotifications } from '@capacitor/local-notifications';
 import type { Category, ReminderSettings, State } from '../engine';
-import { WEEKDAYS_FR, fmt, monthKey, occurrences, pad, planOf, shiftMonth } from '../engine';
+import { WEEKDAYS_FR, daysIn, goalPlanned, fmt, fmtN, monthKey, occurrences, pad, planOf, shiftMonth } from '../engine';
 import { APP } from '../config';
 import { isNative } from './native';
 
@@ -43,9 +43,27 @@ export function buildSchedule(state: State, now: Date, days = 30): PlannedRemind
           out.push({
             id: 0, at,
             title: fixed ? `${c.name} : ${fmt(o.amount)} XOF à payer${r.dayBefore ? ' demain' : ' aujourd’hui'}` : `${c.name} : ${fmt(o.amount)} XOF prévus${r.dayBefore ? ' demain' : ''}`,
-            body: fixed ? 'Ta charge arrive à échéance. Note-la dans l’application une fois payée.' : 'Ton budget pour cette période. Note tes dépenses pour garder le cap.',
+            body: fixed ? 'Ta charge arrive à échéance. Une fois payée, touche « ✓ Payé » dans « À régler ».' : 'Ton budget pour cette période. Note tes dépenses pour garder le cap.',
           });
         }
+      }
+    }
+    // Versements prévus pour les projets (objectifs)
+    for (const g of state.goals ?? []) {
+      if (!g.day || g.remind === false || g.paused || g.doneAt) continue;
+      for (const m of months) {
+        if (m > g.deadline) continue;
+        const [y, mo] = m.split('-').map(Number);
+        let d = new Date(y, mo - 1, Math.min(g.day, daysIn(m)));
+        if (r.dayBefore) d = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+        const at = atTime(d, r.dueTime);
+        if (at <= now || at > end) continue;
+        const src = state.wallets.find((w) => w.id === g.sourceWalletId)?.name;
+        out.push({
+          id: 0, at,
+          title: `Projet « ${g.name} » : ${fmt(goalPlanned(g, m))} XOF à mettre de côté${r.dayBefore ? ' demain' : ''}`,
+          body: `${src ? `Depuis ${src}. ` : ''}Une fois le virement fait, touche « ✓ Versé » dans « À régler ».`,
+        });
       }
     }
   }
@@ -125,8 +143,8 @@ export function googleCalendarUrl(state: State, c: Category, now = new Date()): 
   const end = new Date(start.getTime() + 30 * 60000);
   const q = new URLSearchParams({
     action: 'TEMPLATE',
-    text: `${APP.name} · ${c.name} (${fmt(per)} XOF)`,
-    details: `${describePlan(c)} — budget ${fmt(c.budget)} XOF par mois. Pense à noter la dépense dans ${APP.name}.`,
+    text: `${APP.name} · ${c.name} (${fmtN(per)} XOF)`,
+    details: `${describePlan(c)} — budget ${fmtN(c.budget)} XOF par mois. Pense à noter la dépense dans ${APP.name}.`,
     dates: `${utcStamp(start)}/${utcStamp(end)}`,
     recur: `RRULE:${rule}`,
   });
@@ -148,8 +166,8 @@ export function buildICS(state: State, now = new Date()): string {
     lines.push(
       'BEGIN:VEVENT', `UID:${c.id}@budget-ivoire`, `DTSTAMP:${stamp}`,
       `DTSTART:${utcStamp(start)}`, `DTEND:${utcStamp(new Date(start.getTime() + 30 * 60000))}`, `RRULE:${rule}`,
-      `SUMMARY:${esc(`${APP.name} · ${c.name} (${fmt(per)} XOF)`)}`,
-      `DESCRIPTION:${esc(`${describePlan(c)} — budget ${fmt(c.budget)} XOF par mois.`)}`,
+      `SUMMARY:${esc(`${APP.name} · ${c.name} (${fmtN(per)} XOF)`)}`,
+      `DESCRIPTION:${esc(`${describePlan(c)} — budget ${fmtN(c.budget)} XOF par mois.`)}`,
       'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(c.name)}`, `TRIGGER:${r.dayBefore ? '-P1D' : '-PT0M'}`, 'END:VALARM',
       'END:VEVENT',
     );

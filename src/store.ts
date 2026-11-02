@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Category, State, Tx, Wallet, Settings } from './engine';
 import { toISODate } from './engine';
-import { DEFAULT_CATEGORIES, DEFAULT_GROUPS, DEFAULT_INCOME, DEFAULT_WALLETS, initialState } from './data';
+import { DEFAULT_CATEGORIES, DEFAULT_GROUPS, DEFAULT_INCOME, DEFAULT_WALLETS, initialState, withDefaultImage } from './data';
 import { ICONS } from './icons';
 
 const KEY = 'budget-ivoire:v2';
@@ -64,8 +64,10 @@ function migrate(raw: State): State {
   s.debts = s.debts ?? [];
   s.categories = s.categories.map((c) => {
     const d = DEFAULT_CATEGORIES.find((x) => x.id === c.id);
-    return { ...c, group: c.group ?? d?.group ?? 'g_other', dueDay: c.dueDay ?? d?.dueDay };
+    return withDefaultImage({ ...c, group: c.group ?? d?.group ?? 'g_other', dueDay: c.dueDay ?? d?.dueDay });
   });
+  // 1.4 : images proposées d'office (sauf si l'utilisateur a déjà choisi / retiré une image).
+  s.wallets = s.wallets.map(withDefaultImage);
   return s;
 }
 
