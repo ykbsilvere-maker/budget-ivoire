@@ -8,6 +8,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -67,3 +70,15 @@ jobs:
         with:
           name: budget-ivoire-apk
           path: budget-ivoire.apk
+
+      # Lien de téléchargement direct, stable, utilisable depuis le téléphone :
+      # https://github.com/<compte>/budget-ivoire/releases/latest/download/budget-ivoire.apk
+      - name: Publier l'APK (dernière version)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.1.${{ github.run_number }}"
+          gh release create "$TAG" budget-ivoire.apk \
+            --title "Budget Ivoire $TAG" \
+            --notes "APK Android de Budget Ivoire (version de test, installable directement). Compilé automatiquement depuis le commit ${{ github.sha }}." \
+            --latest
