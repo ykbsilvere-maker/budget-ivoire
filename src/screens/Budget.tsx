@@ -1,5 +1,6 @@
 import { type ReactNode, useMemo, useState } from 'react';
-import { LuChevronDown, LuPlus, LuSettings2, LuSparkles, LuCircleCheck, LuTriangleAlert, LuFlaskConical, LuCheck } from 'react-icons/lu';
+import { LuChevronDown, LuPlus, LuSettings2, LuSparkles, LuCircleCheck, LuTriangleAlert, LuFlaskConical, LuCheck, LuWallet } from 'react-icons/lu';
+import { EnvelopeCards, Evolution } from '../sheets/Envelope';
 import type { MonthReport, State } from '../engine';
 import { fmt, fmtK, groupReports, monthKey, pendingItems, periodView, shiftMonth, type PendingItem } from '../engine';
 import { dateLabel } from '../sheets/PaySheet';
@@ -13,14 +14,16 @@ const monthShort = (m: string) => {
 };
 
 export function BudgetScreen({
-  state, r, month, setMonth, onRebalance, onCategory, onNewCategory, onGroups, onSimulate, onPay, today,
+  state, r, month, setMonth, onRebalance, onCategory, onNewCategory, onGroups, onSimulate, onPay, onFund, today,
 }: {
   state: State; r: MonthReport; month: string; setMonth: (m: string) => void; onRebalance: () => void;
   onCategory: (id: string) => void; onNewCategory: () => void; onGroups: () => void; onSimulate: () => void;
-  onPay: (p: PendingItem) => void; today: Date;
+  onPay: (p: PendingItem) => void; onFund: (categoryId: string) => void; today: Date;
 }) {
   const pending = useMemo(() => (month === monthKey(today) ? pendingItems(state, today) : []), [state, month, today]);
   const [showAll, setShowAll] = useState(false);
+  const [view, setView] = useState<'cards' | 'groups'>('cards');
+  const groupColor = useMemo(() => new Map((state.groups ?? []).map((g) => [g.id, g.color])), [state.groups]);
   const groups = useMemo(() => groupReports(state, r), [state, r]);
   const [open, setOpen] = useState<string | null>(null);
   const [mode, setMode] = useState<'plan' | 'real'>('plan');
@@ -106,8 +109,23 @@ export function BudgetScreen({
         </section>
       )}
 
+      {/* Enveloppes : en cartes (comme les comptes) ou par groupes */}
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <h3 className="text-[13px] font-bold uppercase tracking-wide text-muted">Mes enveloppes</h3>
+        <div className="w-44"><Segmented small value={view} onChange={setView} options={[{ value: 'cards', label: 'Cartes' }, { value: 'groups', label: 'Groupes' }]} /></div>
+      </div>
+      {view === 'cards' && (
+        <>
+          <EnvelopeCards state={state} month={month} onOpen={onCategory} onFund={onFund} groupColor={(c) => groupColor.get(c.group ?? '') ?? '#A3A9B3'} />
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => onFund('')} className="card flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-bold text-primary"><LuWallet size={16} /> Approvisionner</button>
+            <button onClick={onNewCategory} className="card flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold"><LuPlus size={16} /> Enveloppe</button>
+          </div>
+        </>
+      )}
+
       {/* Groupes */}
-      <section className="card overflow-hidden">
+      {view === 'groups' && <section className="card overflow-hidden">
         {groups.length === 0 && <p className="p-4 text-center text-[13px] text-muted">Aucun budget pour l’instant. Ajoute une catégorie pour commencer.</p>}
         {groups.map((g) => {
           const pct = g.budget > 0 ? (g.spent / g.budget) * 100 : g.spent > 0 ? 100 : 0;
@@ -155,7 +173,9 @@ export function BudgetScreen({
         })}
         <button onClick={onNewCategory} className="flex w-full items-center justify-center gap-1.5 border-t border-line py-3 text-[13.5px] font-bold text-primary"><LuPlus size={16} /> Ajouter une catégorie</button>
         <button onClick={onGroups} className="flex w-full items-center justify-center gap-1.5 border-t border-line py-3 text-[13.5px] font-semibold text-muted"><LuSettings2 size={15} /> Gérer mes groupes</button>
-      </section>
+      </section>}
+
+      <Evolution state={state} month={month} title="Mon budget mois par mois" />
 
       {/* Où part ton argent */}
       <section className="card p-4">

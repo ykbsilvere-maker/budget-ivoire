@@ -31,6 +31,15 @@ export function Logo({ size = 36 }: { size?: number }) {
 
 /** Nouveautés affichées dans Réglages › À propos (la plus récente en premier). */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
+  { version: '1.5', date: '2 novembre 2026', items: [
+    'Masquage compte par compte (et du patrimoine) : l’écran reste affiché, le code ou l’empreinte montre le montant',
+    'Onglets protégés : visibles, montants masqués jusqu’au code',
+    'Approvisionner une enveloppe depuis un compte : l’argent y est réservé, solde avant → après',
+    'Compte source par enveloppe ; « pas assez » : compléter depuis un compte',
+    'Calendrier : sur une date, Prévoir une dépense, Approvisionner ou Noter',
+    'Mois concernés et budget différent selon le mois ; évolution mois par mois',
+    'Enveloppes en cartes, lisibles d’un coup d’œil comme les comptes',
+  ] },
   { version: '1.4', date: '2 novembre 2026', items: [
     'Images proposées d’office (tes photos + pictogrammes), téléchargeables ; icône devinée d’après le nom',
     '« À régler » : un geste « ✓ Payé » pour chaque dépense prévue (ou « Pas cette fois »)',

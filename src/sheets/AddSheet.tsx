@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LuCamera, LuMic, LuRepeat, LuTriangleAlert, LuArrowDown, LuSparkles } from 'react-icons/lu';
 import type { Attachment, Tx } from '../engine';
-import { findDuplicate, fmt, fmtN, lockCheck, parseSentence, suggestCategory, toISODate } from '../engine';
+import { envelopeShortfall, findDuplicate, fmt, fmtN, lockCheck, parseSentence, suggestCategory, toISODate, topUpEnvelope } from '../engine';
+import { TopUpPanel, type TopUp } from './Envelope';
+import { uid } from '../store';
 import { AttachmentsField, LockedNotice } from './PaySheet';
+import { fmtWallet } from '../services/security';
 import { addAttachmentFromDataUrl, removeAttachment } from '../services/files';
 import type { Store } from '../store';
 import { Btn, Label, Money, Segmented, Sheet, cx, inputCls } from '../ui';
@@ -45,6 +48,7 @@ export function AddSheet({
   const [scan, setScan] = useState<{ preview: string; busy: boolean; result?: ReceiptResult } | null>(null);
   const [files, setFiles] = useState<Attachment[]>([]);
   const [keepScan, setKeepScan] = useState(true);
+  const [topUp, setTopUp] = useState<TopUp>({ on: true, walletId: 'w_cash' });
   const onClose = () => { files.forEach(removeAttachment); close0(); };
   const fileRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -53,7 +57,7 @@ export function AddSheet({
     if (!open) return;
     setMode(initialMode); setAmount(initialAmount ? String(initialAmount) : ''); setNote('');
     if (initialCategory) { setCat(initialCategory); } setFee(''); setDupWarn(null); setHeard(''); setScan(null);
-    setVoiceMissing([]); setFiles([]); setKeepScan(true); setCatTouched(!!initialCategory); setDate(initialDate ?? toISODate(new Date()));
+    setVoiceMissing([]); setFiles([]); setKeepScan(true); setTopUp({ on: true, walletId: lastExpense?.walletId ?? 'w_cash' }); setCatTouched(!!initialCategory); setDate(initialDate ?? toISODate(new Date()));
     if (autoScan) setTimeout(() => fileRef.current?.click(), 150);
     else setTimeout(() => amountRef.current?.focus(), 250);
   }, [open, initialMode, initialDate, autoScan, initialAmount, initialCategory]);
@@ -114,6 +118,8 @@ export function AddSheet({
     const draft = { type: mode, amount: n, date, categoryId: mode === 'expense' ? cat : inc, note: note || undefined } as const;
     const dup = findDuplicate(state.txs, draft);
     if (dup && !force) { setDupWarn(dup); return; }
+    const short = mode === 'expense' ? envelopeShortfall(state, cat, n, date.slice(0, 7)) : null;
+    if (short && topUp.on) store.setAll((s) => topUpEnvelope(s, cat, topUp.walletId, short.missing, date, uid('f')));
     ids.push(store.addTx({ ...draft, walletId: wallet, attachments: await attachments() }));
     const f = Number(fee) || 0;
     if (mode === 'expense' && f > 0) ids.push(store.addTx({ type: 'expense', amount: f, date, categoryId: 'c_fees', walletId: wallet, note: 'Frais de transaction' }));
@@ -301,7 +307,7 @@ export function AddSheet({
           <Label>Catégorie {!catTouched && note && suggestCategory(note, cats) ? '· proposée automatiquement' : ''}</Label>
           <div className="grid grid-cols-4 gap-1.5">
             {cats.map((c) => (
-              <button key={c.id} onClick={() => { setCat(c.id); setCatTouched(true); }}
+              <button key={c.id} onClick={() => { setCat(c.id); setCatTouched(true); if (c.sourceWalletId) { setWallet(c.sourceWalletId); setTopUp((t) => ({ ...t, walletId: c.sourceWalletId! })); } }}
                 className={cx('flex flex-col items-center gap-1 rounded-2xl border px-1 py-2 text-center transition', cat === c.id ? 'border-primary bg-primary/10' : 'border-transparent')}>
                 <Glyph icon={c.icon} logo={c.logo} label={c.name} size={36} active={cat === c.id} />
                 <span className="w-full truncate text-[10.5px] font-semibold leading-tight">{c.name}</span>
@@ -346,7 +352,8 @@ export function AddSheet({
       ) : (
         <>
           <Label>{mode === 'income' ? 'Reçu sur' : 'Payé avec'}</Label>
-          <WalletPicker wallets={wallets} value={wallet} onChange={setWallet} bal={computeBal} />
+          <WalletPicker wallets={wallets} value={wallet} onChange={(w) => { setWallet(w); setTopUp((t) => ({ ...t, walletId: w })); }} bal={computeBal} />
+          {mode === 'expense' && <TopUpPanel store={store} categoryId={cat} amount={n} date={date} value={topUp} onChange={setTopUp} />}
           {blocked && <LockedNotice blocked={blocked} amount={n} onUnlock={(g) => { close0(); onUnlock(g); }} />}
         </>
       )}
@@ -390,7 +397,7 @@ function WalletPicker({ wallets, value, onChange, bal }: { wallets: { id: string
           <Glyph icon={w.icon} logo={w.logo} label={w.name} size={30} />
           <span>
             <span className="block text-[12.5px] font-semibold leading-tight">{w.name}</span>
-            <span className="num block text-[11px] leading-tight text-muted">{fmt(bal(w.id))} XOF</span>
+            <span className="num block text-[11px] leading-tight text-muted">{fmtWallet(w.id, bal(w.id))} XOF</span>
           </span>
         </button>
       ))}

@@ -1,8 +1,19 @@
-## Budget Ivoire 1.4 — 2 novembre 2026
+## Budget Ivoire 1.5 — 2 novembre 2026
 
 **Installer :** ouvrez `budget-ivoire.apk` sur votre téléphone Android et autorisez « Installer des applications inconnues ». Une version déjà installée est mise à jour, vos données sont conservées.
 
-##### Nouveautés 1.4
+##### Nouveautés 1.5
+- **Masquage compte par compte** : chaque compte (et le patrimoine en haut) a son œil. L'écran reste affiché, le montant est masqué ; code ou empreinte pour le voir.
+- **Onglets protégés** : ils restent visibles, seuls les montants sont masqués jusqu'au code.
+- **Approvisionner une enveloppe** depuis un compte (Wave, banque…) : l'argent reste sur le compte mais il est réservé à l'enveloppe ; solde libre avant → après.
+- **Compte source** pour chaque enveloppe, proposé pour approvisionner et pour payer.
+- **Pas assez dans l'enveloppe** : l'application propose de compléter depuis un compte, avec le solde avant → après.
+- **Calendrier** : en touchant une date → Prévoir une dépense (dans « À régler », avec rappel), Approvisionner une enveloppe, ou Noter une dépense.
+- **Séquences** : mois concernés (ex. scolarité de septembre à juin) et budget différent selon le mois.
+- **Évolution mois par mois** du budget, des dépenses et du reste (tout le budget et chaque enveloppe).
+- **Enveloppes en cartes** dans l'onglet Budget, lisibles comme les comptes du Patrimoine.
+
+### Rappel 1.4
 - **Images proposées d'office** : tes photos (espèces, Wave, Orange Money, MTN, banque, loyer, courses, transport, santé, loisirs, téléphone) et des pictogrammes pour le reste. Icône devinée automatiquement d'après le nom. Chaque image peut être changée, retirée ou téléchargée.
 - **« À régler »** dans l'onglet Budget : la liste de ce qui est prévu (en retard, aujourd'hui, à venir) avec un bouton **✓ Payé** prérempli (montant, compte). « Pas cette fois » pour sauter une échéance. Aussi dans le calendrier.
 - **Justificatifs** : photo ou PDF joint à une dépense (reçu scanné gardé si tu veux), à voir, télécharger ou partager. Sauvegardés en ligne (espace privé) et récupérables sur un autre téléphone.

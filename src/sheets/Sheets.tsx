@@ -3,7 +3,7 @@ import { LuCheck, LuDownload, LuLock, LuMoon, LuPalette, LuSparkles, LuSun, LuTr
 import type { Attachment, Category, CategoryKind, MonthReport, Plan, State, Tx, Wallet } from '../engine';
 import { AttachmentsField } from './PaySheet';
 import { removeAttachment } from '../services/files';
-import { WEEKDAYS_FR, applyRebalance, fmt, monthKey, occurrences, proposeRebalance, toCSV, walletReports, toISODate, type RebalanceProposal } from '../engine';
+import { WEEKDAYS_FR, applyRebalance, fmt, fmtN, monthKey, occurrences, proposeRebalance, toCSV, walletReports, toISODate, type RebalanceProposal } from '../engine';
 import { buildICS, describePlan, googleCalendarUrl, remindersOf, applyNativeReminders, notificationPermission } from '../services/reminders';
 import { isNative, openExternal } from '../services/native';
 import type { Store, ThemeId, UiPrefs } from '../store';
@@ -14,7 +14,10 @@ import { CARD_COLORS } from '../screens/Money';
 import { Glyph, ICON_SECTIONS, fileToLogo, suggestIcon } from '../icons';
 import { DEFAULT_IMAGES } from '../data';
 import { saveImage } from '../services/native';
-import { LuImagePlus, LuCalendarPlus, LuBell } from 'react-icons/lu';
+import { isWalletMasked, maskWallet } from '../services/security';
+import { LuImagePlus, LuCalendarPlus, LuBell, LuWallet, LuPlus } from 'react-icons/lu';
+import { Evolution, WalletFreePicker } from './Envelope';
+import { MONTHS_FR, budgetFor, envelopeView, shiftMonth } from '../engine';
 
 // ---------------------------------------------------------------------
 // Modifier / supprimer une opération (avec traçabilité)
@@ -139,7 +142,7 @@ export function RebalanceSheet({ open, onClose, store, r, onDone }: { open: bool
       footer={
         <div className="grid grid-cols-2 gap-2 pb-1">
           <Btn variant="ghost" onClick={onClose}>Refuser</Btn>
-          <Btn onClick={() => { store.setCategories(applyRebalance(store.state, proposal)); onDone('Nouveaux plafonds appliqués'); }} disabled={base.overspend === 0}>
+          <Btn onClick={() => { store.setCategories(applyRebalance(store.state, proposal, r.month)); onDone('Nouveaux plafonds appliqués'); }} disabled={base.overspend === 0}>
             Appliquer
           </Btn>
         </div>
@@ -202,7 +205,7 @@ const KINDS: { value: CategoryKind; label: string; hint: string }[] = [
   { value: 'unexpected', label: 'Imprévu', hint: 'Réserve pour les surprises' },
 ];
 
-export function CategorySheet({ id, onClose, store }: { id: string | null; onClose: () => void; store: Store }) {
+export function CategorySheet({ id, onClose, store, onFund, onLog }: { id: string | null; onClose: () => void; store: Store; onFund?: (id: string) => void; onLog?: (id: string) => void }) {
   const existing = store.state.categories.find((c) => c.id === id);
   const [c, setC0] = useState<Category | null>(null);
   const autoIcon = useRef(true);
@@ -231,6 +234,7 @@ export function CategorySheet({ id, onClose, store }: { id: string | null; onClo
           <Btn onClick={save} className={existing ? '' : 'col-span-2'}><LuCheck /> Enregistrer</Btn>
         </div>
       }>
+      {existing && <EnvelopeOverview c={existing} store={store} onFund={onFund && (() => { onClose(); onFund(c.id); })} onLog={onLog && (() => { onClose(); onLog(c.id); })} />}
       <Label>Nom</Label>
       <input value={c.name} onChange={(e) => setC({ ...c, name: e.target.value, icon: !existing && autoIcon.current ? suggestIcon(e.target.value) : c.icon })} className={inputCls} placeholder="Ex : Cotisation association" />
       <Label>Budget du mois (XOF)</Label>
@@ -239,6 +243,10 @@ export function CategorySheet({ id, onClose, store }: { id: string | null; onClo
       <select value={c.group ?? 'g_other'} onChange={(e) => setC({ ...c, group: e.target.value })} className={inputCls}>
         {(store.state.groups ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
       </select>
+      <Label><span className="inline-flex items-center gap-1"><LuWallet /> Approvisionné depuis</span></Label>
+      <WalletFreePicker store={store} value={c.sourceWalletId ?? ''} onChange={(w) => setC({ ...c, sourceWalletId: w })} month={monthKey(new Date())} />
+      <p className="mt-1 text-[11.5px] text-muted">Le compte d’où vient l’argent de cette enveloppe ; il est proposé pour approvisionner et pour payer.</p>
+      <SequenceEditor c={c} setC={setC} />
       <RhythmEditor c={c} setC={setC} store={store} />
       <Label>Type de dépense</Label>
       <div className="space-y-1.5">
@@ -305,7 +313,13 @@ export function WalletSheet({ id, onClose, store }: { id: string | null; onClose
       </label>
       {existing && (
         <label className="mt-2 flex items-center justify-between rounded-2xl bg-surface2 px-3 py-3 text-[14px]">
-          <span>Masquer ce portefeuille</span>
+          <span>Solde masqué<span className="block text-[11.5px] text-muted">Le compte reste visible ; il faut le code pour voir le montant</span></span>
+          <input type="checkbox" checked={isWalletMasked(w.id)} onChange={(e) => { maskWallet(w.id, e.target.checked); setW({ ...w }); }} className="h-5 w-5 accent-[var(--s-primary)]" />
+        </label>
+      )}
+      {existing && (
+        <label className="mt-2 flex items-center justify-between rounded-2xl bg-surface2 px-3 py-3 text-[14px]">
+          <span>Ne plus afficher ce compte</span>
           <input type="checkbox" checked={!!w.hidden} onChange={(e) => setW({ ...w, hidden: e.target.checked })} className="h-5 w-5" />
         </label>
       )}
@@ -584,6 +598,98 @@ function RemindersSettings({ store, onToast }: { store: Store; onToast: (m: stri
         <LuCalendarPlus /> Mettre tous mes rappels dans mon calendrier (.ics)
       </Btn>
       <p className="mt-1 text-[11px] text-muted">Pour Google Agenda, le plus simple : ouvre une enveloppe (onglet Budget) › « Ajouter à mon Google Agenda ».</p>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Aperçu d'une enveloppe : ce qui reste, approvisionnement, évolution
+// ---------------------------------------------------------------------
+function EnvelopeOverview({ c, store, onFund, onLog }: { c: Category; store: Store; onFund?: () => void; onLog?: () => void }) {
+  const month = monthKey(new Date());
+  const ev = envelopeView(store.state, c, month);
+  const wName = (id: string) => store.state.wallets.find((w) => w.id === id)?.name ?? id;
+  return (
+    <div className="mb-1 space-y-2">
+      <div className="rounded-2xl bg-surface2 p-3">
+        <div className="flex items-center gap-3">
+          <Glyph icon={c.icon} logo={c.logo} label={c.name} size={44} />
+          <div className="min-w-0 flex-1">
+            <div className="text-[11.5px] text-muted">{ev.remaining < 0 ? 'Dépassé de' : 'Reste ce mois'}</div>
+            <Money v={Math.abs(ev.remaining)} className={cx('block text-[22px] font-extrabold leading-tight', ev.remaining < 0 && 'text-danger')} />
+          </div>
+          <div className="text-right text-[11.5px] text-muted">dépensé<br /><b className="num text-ink">{fmt(ev.spent)}</b> / {fmt(ev.budget)}</div>
+        </div>
+        <div className="mt-2 text-[12px]">
+          {ev.funded > 0
+            ? <>Approvisionné : <b className="num">{fmt(ev.funded)} XOF</b> ({ev.byWallet.map((w) => `${wName(w.walletId)} ${fmt(w.funded)}`).join(', ')}){ev.reserved > 0 ? <> · encore réservé <b className="num">{fmt(ev.reserved)}</b></> : null}</>
+            : <span className="text-muted">Pas encore approvisionnée ce mois.</span>}
+          {ev.toFund > 0 && <> · <span className="font-semibold text-primary">à approvisionner {fmt(ev.toFund)}</span></>}
+        </div>
+        {(onFund || onLog) && (
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {onFund && <Btn variant="primary" onClick={onFund}><LuWallet /> Approvisionner</Btn>}
+            {onLog && <Btn variant="ghost" onClick={onLog}><LuPlus /> Dépense</Btn>}
+          </div>
+        )}
+      </div>
+      <Evolution state={store.state} month={month} categoryId={c.id} title="Évolution de l’enveloppe" />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Séquences : mois concernés + budget propre à certains mois
+// ---------------------------------------------------------------------
+function SequenceEditor({ c, setC }: { c: Category; setC: (c: Category) => void }) {
+  const [open, setOpen] = useState(!!(c.months?.length || (c.budgets && Object.keys(c.budgets).length)));
+  const start = monthKey(new Date());
+  const months = Array.from({ length: 12 }, (_, i) => shiftMonth(start, i));
+  const all = !c.months?.length;
+  const toggleMonth = (m: number) => {
+    const cur = c.months?.length ? c.months : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const next = cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m].sort((a, b) => a - b);
+    setC({ ...c, months: next.length === 12 ? undefined : next });
+  };
+  const setBudget = (key: string, v: number) => {
+    const budgets = { ...(c.budgets ?? {}) };
+    if (v === c.budget) delete budgets[key]; else budgets[key] = v;
+    setC({ ...c, budgets: Object.keys(budgets).length ? budgets : undefined });
+  };
+  return (
+    <>
+      <button onClick={() => setOpen(!open)} className="mt-4 flex w-full items-center justify-between rounded-2xl bg-surface2 px-3 py-2.5 text-left">
+        <span><span className="block text-[13.5px] font-semibold">Mois concernés et budget par mois</span>
+          <span className="block text-[11.5px] text-muted">{all ? 'Tous les mois' : `${c.months!.length} mois : ${c.months!.map((m) => MONTHS_FR[m - 1]).join(', ')}`}{c.budgets && Object.keys(c.budgets).length ? ` · ${Object.keys(c.budgets).length} mois avec un autre montant` : ''}</span></span>
+        <span className="text-[12px] font-bold text-primary">{open ? 'Fermer' : 'Régler'}</span>
+      </button>
+      {open && (
+        <div className="mt-2 rounded-2xl border border-line p-3">
+          <div className="text-[12px] text-muted">Touche les mois où cette dépense existe (ex. scolarité de septembre à juin).</div>
+          <div className="mt-2 grid grid-cols-6 gap-1.5">
+            {MONTHS_FR.map((name, i) => {
+              const on = all || c.months!.includes(i + 1);
+              return <button key={name} onClick={() => toggleMonth(i + 1)} className={cx('rounded-lg py-1.5 text-[11.5px] font-semibold capitalize', on ? 'bg-primary text-onprimary' : 'bg-surface2 text-muted')}>{name.replace('.', '')}</button>;
+            })}
+          </div>
+          <div className="mt-3 text-[12px] text-muted">Montant de chaque mois (laisse le montant habituel ou change-le) :</div>
+          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+            {months.map((key) => {
+              const m = Number(key.slice(5));
+              const active = all || c.months!.includes(m);
+              const v = budgetFor({ ...c, months: undefined }, key);
+              const custom = c.budgets?.[key] !== undefined;
+              return (
+                <label key={key} className={cx('rounded-xl px-2 py-1.5', active ? (custom ? 'bg-primary/10' : 'bg-surface2') : 'bg-surface2 opacity-40')}>
+                  <span className="block text-[10.5px] capitalize text-muted">{MONTHS_FR[m - 1]} {key.slice(2, 4)}</span>
+                  <input inputMode="numeric" disabled={!active} value={active ? fmtN(v) : '—'} onChange={(e) => setBudget(key, Number(e.target.value.replace(/\D/g, '')) || 0)}
+                    className={cx('num w-full bg-transparent text-[13px] outline-none', custom && 'font-bold text-primary')} />
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </>
   );
 }

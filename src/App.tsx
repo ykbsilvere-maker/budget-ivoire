@@ -3,8 +3,9 @@ import { LuCalendarDays, LuChartColumn, LuChartPie, LuEye, LuEyeOff, LuLock, LuP
 import type { PendingItem, ScenarioItem, Tx } from './engine';
 import { computeMonth, monthKey, setMaskAmounts, toCSV, toISODate } from './engine';
 import { PaySheet, type PayTarget } from './sheets/PaySheet';
+import { FundSheet, PlanSheet, type FundTarget } from './sheets/Envelope';
 import { LockScreen, PrivacySettings, useAppLock, useCodePrompt } from './sheets/Lock';
-import { setSecurity, useSecurity, type LockArea } from './services/security';
+import { resetReveals, setSecurity, useSecurity, type LockArea } from './services/security';
 import { download, useBudgetStore, useUiPrefs } from './store';
 import { APP, Logo } from './config';
 import { HEALTH, Toast, cx } from './ui';
@@ -50,15 +51,24 @@ export default function App() {
   const [toast, setToast] = useState<{ msg: string; ids?: string[] } | null>(null);
   const [pay, setPay] = useState<PayTarget | null>(null);
   const [unlockId, setUnlockId] = useState<string | null>(null);
+  const [fund, setFund] = useState<FundTarget | null>(null);
+  const [planDate, setPlanDate] = useState<string | null>(null);
 
   // Confidentialité : montants masqués, code, onglets protégés.
   const sec = useSecurity();
-  setMaskAmounts(!!sec.mask);
   const { element: codePrompt, requireCode } = useCodePrompt();
   const appLock = useAppLock();
   const [openAreas, setOpenAreas] = useState<Set<string>>(() => new Set());
   useEffect(() => { if (appLock.locked) setOpenAreas(new Set()); }, [appLock.locked]);
   const tabLocked = !!sec.pin && (sec.areas ?? []).includes(tab as LockArea) && !openAreas.has(tab);
+  // Onglet protégé : il reste affiché, seuls les montants sont masqués jusqu'au code.
+  setMaskAmounts(!!sec.mask || tabLocked);
+  useEffect(() => { if (appLock.locked) resetReveals(); }, [appLock.locked]);
+  useEffect(() => {
+    const h = () => { if (document.visibilityState === 'hidden') resetReveals(); };
+    document.addEventListener('visibilitychange', h);
+    return () => document.removeEventListener('visibilitychange', h);
+  }, []);
   const unlockTab = async (t: Tab) => {
     if (await requireCode(`Ouvrir « ${TAB_LABEL[t]} »`)) setOpenAreas((s) => new Set(s).add(t));
   };
@@ -66,7 +76,7 @@ export default function App() {
     if (!sec.mask) { setSecurity({ mask: true }); setToast({ msg: 'Montants masqués' }); return; }
     if (await requireCode('Afficher les montants')) setSecurity({ mask: false });
   };
-  const onPayItem = (p: PendingItem) => (p.kind === 'goal' ? setContribId(p.refId) : setPay({ categoryId: p.refId, date: p.date, amount: p.amount }));
+  const onPayItem = (p: PendingItem) => (p.kind === 'goal' ? setContribId(p.refId) : setPay({ categoryId: p.refId, date: p.date, amount: p.amount, key: p.key, walletId: p.walletId }));
   const openUnlock = (goalId: string) => { go('goals'); setUnlockId(goalId); };
 
   // Rafraîchit la date au retour sur l'app (changement de jour / de mois).
@@ -117,7 +127,6 @@ export default function App() {
     if (t !== tab) tabHistory.current = [...tabHistory.current.filter((x) => x !== t), tab].slice(-8);
     setTab(t);
     window.scrollTo({ top: 0 });
-    if (sec.pin && (sec.areas ?? []).includes(t as LockArea) && !openAreas.has(t)) unlockTab(t);
   };
   const backState = useRef({ tab, anaTab });
   backState.current = { tab, anaTab };
@@ -164,14 +173,13 @@ export default function App() {
       <main className="flex-1 px-4 pb-32 pt-1" key={tab}>
         <div className="anim-fade">
           {tabLocked && (
-            <div className="card mt-6 flex flex-col items-center gap-2 p-6 text-center">
-              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-surface2 text-primary"><LuLock size={26} /></span>
-              <h2 className="text-[16px] font-bold">Onglet protégé</h2>
-              <p className="text-[13px] text-muted">Saisis ton code{sec.biometric ? ' ou utilise ton empreinte' : ''} pour voir « {TAB_LABEL[tab]} ».</p>
-              <button onClick={() => unlockTab(tab)} className="mt-1 rounded-xl bg-primary px-5 py-2.5 text-[14px] font-bold text-onprimary">Déverrouiller</button>
-            </div>
+            <button onClick={() => unlockTab(tab)} className="mb-2 flex w-full items-center gap-2 rounded-2xl bg-surface2 px-3 py-2.5 text-left text-[12.5px]">
+              <LuLock className="shrink-0 text-primary" size={16} />
+              <span className="min-w-0 flex-1">Montants masqués dans « {TAB_LABEL[tab]} »</span>
+              <span className="shrink-0 rounded-lg bg-primary px-2.5 py-1 text-[12px] font-bold text-onprimary">Afficher</span>
+            </button>
           )}
-          {!tabLocked && tab === 'budget' && (
+          {tab === 'budget' && (
             <BudgetScreen
               state={store.state} r={r} month={month} setMonth={setMonth}
               onRebalance={() => setRebalance(true)}
@@ -180,23 +188,26 @@ export default function App() {
               onGroups={() => setGroupsOpen(true)}
               onSimulate={() => { setAnaTab('sim'); go('analysis'); }}
               onPay={onPayItem}
+              onFund={(id) => setFund({ categoryId: id || undefined })}
               today={now}
             />
           )}
-          {!tabLocked && tab === 'goals' && (
+          {tab === 'goals' && (
             <GoalsScreen
               state={store.state} r={r}
               onNewGoal={() => setGoalId('')} onEditGoal={setGoalId} onContribute={setContribId} onUnlock={setUnlockId}
               onNewDebt={() => setDebtId('')} onEditDebt={setDebtId} onPayDebt={setPayId}
             />
           )}
-          {!tabLocked && tab === 'calendar' && (
-            <CalendarScreen state={store.state} r={r} month={month} setMonth={setMonth} onEdit={setEditTx} onAdd={(date) => setAdd({ mode: 'expense', date })} onPay={setPay} />
+          {tab === 'calendar' && (
+            <CalendarScreen state={store.state} r={r} month={month} setMonth={setMonth} onEdit={setEditTx} onAdd={(date) => setAdd({ mode: 'expense', date })} onPay={setPay}
+              onPlan={setPlanDate} onFund={(date) => setFund({ date })}
+              onRemovePlanned={(id) => store.setAll((s) => ({ ...s, planned: (s.planned ?? []).filter((p) => p.id !== id) }))} />
           )}
-          {!tabLocked && tab === 'money' && (
-            <MoneyScreen state={store.state} r={r} onTransfer={() => setAdd({ mode: 'transfer' })} onEditWallet={setWalletId} onAddWallet={() => setWalletId('')} onEdit={setEditTx} />
+          {tab === 'money' && (
+            <MoneyScreen state={store.state} r={r} onTransfer={() => setAdd({ mode: 'transfer' })} onEditWallet={setWalletId} onAddWallet={() => setWalletId('')} onEdit={setEditTx} requireCode={requireCode} />
           )}
-          {!tabLocked && tab === 'analysis' && (
+          {tab === 'analysis' && (
             <AnalysisScreen
               state={store.state} r={r} today={now} tab={anaTab} setTab={setAnaTab}
               onCategory={setCatId}
@@ -230,7 +241,9 @@ export default function App() {
 
       <AddSheet open={!!add} onClose={() => setAdd(null)} store={store} initialMode={add?.mode} initialDate={add?.date} autoScan={add?.scan} initialAmount={add?.amount} initialCategory={add?.categoryId} onSaved={onSaved} onUnlock={openUnlock} />
       <EditTxSheet tx={editTx} onClose={() => setEditTx(null)} store={store} />
-      <CategorySheet id={catId} onClose={() => setCatId(null)} store={store} />
+      <CategorySheet id={catId} onClose={() => setCatId(null)} store={store} onFund={(id) => setFund({ categoryId: id })} onLog={(id) => setAdd({ mode: 'expense', categoryId: id })} />
+      <FundSheet target={fund} onClose={() => setFund(null)} store={store} onDone={(m) => { setFund(null); setToast({ msg: m }); }} />
+      <PlanSheet date={planDate} onClose={() => setPlanDate(null)} store={store} onDone={(m) => { setPlanDate(null); setToast({ msg: m }); }} />
       <WalletSheet id={walletId} onClose={() => setWalletId(null)} store={store} />
       <RebalanceSheet open={rebalance} onClose={() => setRebalance(false)} store={store} r={r} onDone={(m) => { setRebalance(false); setToast({ msg: m }); }} />
       <GoalSheet id={goalId} onClose={() => setGoalId(null)} store={store} />

@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 import { isNative } from './native';
+import { MASK_TEXT, fmt } from '../engine';
 
 export type LockArea = 'money' | 'goals' | 'calendar' | 'analysis' | 'budget';
 export interface Security {
@@ -17,6 +18,8 @@ export interface Security {
   lockProjects?: boolean;
   /** Montants masqués (••••). */
   mask?: boolean;
+  /** Comptes dont le solde est masqué (code pour le voir). 'total' = patrimoine en haut. */
+  maskedWallets?: string[];
   fails?: number;
   lockUntil?: number;
 }
@@ -39,6 +42,25 @@ export function useSecurity() {
 
 // --- Masquage des montants (utilisé par fmt / fmtK) ---
 export const isMasked = () => !!current.mask;
+
+// --- Masquage compte par compte : masqué en permanence, visible un moment après le code ---
+const revealed = new Set<string>();
+export const isWalletMasked = (id: string) => (current.maskedWallets ?? []).includes(id);
+export const isWalletHidden = (id: string) => isWalletMasked(id) && !revealed.has(id);
+export function maskWallet(id: string, on: boolean) {
+  const list = new Set(current.maskedWallets ?? []);
+  if (on) list.add(id); else list.delete(id);
+  revealed.delete(id);
+  setSecurity({ maskedWallets: [...list] });
+}
+export function revealWallet(id: string, show: boolean) {
+  if (show) revealed.add(id); else revealed.delete(id);
+  subs.forEach((f) => f({ ...current }));
+}
+/** Tout re-masquer (verrouillage, retour sur l'application). */
+export function resetReveals() { revealed.clear(); subs.forEach((f) => f({ ...current })); }
+/** Solde d'un compte, masqué si besoin. */
+export const fmtWallet = (id: string, n: number) => (isWalletHidden(id) ? MASK_TEXT : fmt(n));
 
 // --- Code à 4 chiffres ---
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');

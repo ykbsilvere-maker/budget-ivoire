@@ -24,7 +24,19 @@ export interface Category {
   /** Pour les dépenses « ajustables » : réduction maximale autorisée (0–1). */
   maxCut?: number;
   hidden?: boolean;
+  /** Compte d'où vient l'argent de l'enveloppe (approvisionnement, paiement par défaut). */
+  sourceWalletId?: string;
+  /** Mois concernés (1–12). Vide = tous les mois. */
+  months?: number[];
+  /** Budget différent pour certains mois (« AAAA-MM » → montant). */
+  budgets?: Record<string, number>;
 }
+
+/** Approvisionnement d'une enveloppe depuis un compte : l'argent reste sur le compte, réservé à l'enveloppe. */
+export interface Funding { id: string; date: string; categoryId: string; walletId: string; amount: number; note?: string }
+
+/** Dépense prévue ponctuelle (posée sur une date du calendrier). */
+export interface Planned { id: string; date: string; categoryId: string; amount: number; walletId?: string; note?: string }
 
 export interface IncomeCategory {
   id: string;
@@ -175,6 +187,10 @@ export interface State {
   debts?: Debt[];
   /** Dépenses prévues volontairement sautées (« Pas cette fois »). */
   skipped?: string[];
+  /** Approvisionnements des enveloppes. */
+  fundings?: Funding[];
+  /** Dépenses prévues ponctuelles. */
+  planned?: Planned[];
   categories: Category[];
   incomeCategories: IncomeCategory[];
   wallets: Wallet[];
@@ -214,6 +230,8 @@ export interface WalletReport {
   balance: number;
   /** Part du solde bloquée pour des objectifs / projets. */
   locked: number;
+  /** Part réservée aux enveloppes du budget (approvisionnements non encore dépensés, mois en cours). */
+  reservedBudget: number;
 }
 
 export interface MonthReport {
@@ -295,7 +313,8 @@ const FEES_ID = 'c_fees';
 // ---------------------------------------------------------------------
 // Soldes des portefeuilles (toutes dates jusqu'à `until` incluse)
 // ---------------------------------------------------------------------
-export function walletReports(state: State, until: string): WalletReport[] {
+export function walletReports(state: State, until: string, month?: string): WalletReport[] {
+  const env = month ? envelopeReservations(state, month) : new Map<string, { categoryId: string; name: string; amount: number }[]>();
   return state.wallets
     .filter((w) => !w.hidden)
     .map((w) => {
@@ -314,6 +333,7 @@ export function walletReports(state: State, until: string): WalletReport[] {
         id: w.id, name: w.name, icon: w.icon, logo: w.logo, source: w.source, updatedAt: w.updatedAt, reserved: !!w.reserved,
         initial: w.initialBalance, inflow, outflow, transfersIn: tin, transfersOut: tout,
         balance, locked: Math.min(lockedIn(state, w.id), Math.max(0, balance)),
+        reservedBudget: (env.get(w.id) ?? []).reduce((a, x) => a + x.amount, 0),
       };
     });
 }
@@ -361,7 +381,7 @@ export function computeMonth(state: State, month: string, today: Date): MonthRep
   const netSpent = Math.max(0, spent - refunds);
 
   const elapsed = Math.max(1, dayOfMonth);
-  const categories: CategoryReport[] = state.categories
+  const categories: CategoryReport[] = catsForMonth(state.categories, month)
     .filter((c) => !c.hidden || (spentBy.get(c.id) ?? 0) > 0)
     .map((c) => {
       const s = spentBy.get(c.id) ?? 0;
@@ -399,7 +419,7 @@ export function computeMonth(state: State, month: string, today: Date): MonthRep
   const projectedFlexSpend = sum(isFlex, (c) => c.projected);
 
   const until = month === todayKey ? toISODate(today) : `${month}-${pad(dim)}`;
-  const wallets = walletReports(state, until);
+  const wallets = walletReports(state, until, month);
   // L'argent bloqué pour un projet n'est pas « disponible ».
   const totalCash = wallets.filter((w) => !w.reserved).reduce((a, w) => a + w.balance - w.locked, 0);
   const netWorth = wallets.reduce((a, w) => a + w.balance, 0);
@@ -495,17 +515,18 @@ export function proposeRebalance(state: State, report: MonthReport): RebalancePr
 }
 
 /** Applique une proposition : ne modifie que les plafonds, jamais l'historique ni les obligations. */
-export function applyRebalance(state: State, p: RebalanceProposal): Category[] {
+export function applyRebalance(state: State, p: RebalanceProposal, month?: string): Category[] {
   const next = new Map<string, number>();
   for (const c of p.covers) next.set(c.id, c.to);
   for (const c of p.cuts) next.set(c.id, c.to);
   return state.categories.map((c) => {
     if (!next.has(c.id)) return c;
-    if (c.kind === 'obligatory' || c.kind === 'savings') {
-      // Une obligation dépassée peut être relevée, jamais réduite.
-      return { ...c, budget: Math.max(c.budget, next.get(c.id)!) };
-    }
-    return { ...c, budget: next.get(c.id)! };
+    const cur = month ? budgetFor(c, month) : c.budget;
+    // Une obligation dépassée peut être relevée, jamais réduite.
+    const v = c.kind === 'obligatory' || c.kind === 'savings' ? Math.max(cur, next.get(c.id)!) : next.get(c.id)!;
+    // Budget propre à ce mois : on ne change que ce mois-là.
+    if (month && c.budgets?.[month] !== undefined) return { ...c, budgets: { ...c.budgets, [month]: v } };
+    return { ...c, budget: v };
   });
 }
 
@@ -670,7 +691,7 @@ export function monthDues(state: State, r: MonthReport): Due[] {
   const color = new Map((state.groups ?? []).map((g) => [g.id, g.color]));
   const out: Due[] = [];
   for (const c of state.categories) {
-    if (c.hidden || c.budget <= 0) continue;
+    if (c.hidden || budgetFor(c, r.month) <= 0) continue;
     const occ = occurrences(c, r.month);
     const monthly = planOf(c)?.freq === 'monthly';
     const rep = r.categories.find((x) => x.id === c.id);
@@ -681,7 +702,7 @@ export function monthDues(state: State, r: MonthReport): Due[] {
       const spentDay = state.txs.filter((t) => t.type === 'expense' && t.categoryId === c.id && t.date === dayKey && !t.planKey).reduce((a, t) => a + t.amount, 0);
       out.push({
         categoryId: c.id, name: c.name, icon: c.icon, logo: c.logo, amount: o.amount, day: o.day, date: dayKey,
-        paid: (state.skipped ?? []).includes(key) || linked >= o.amount || (monthly ? (rep?.spent ?? 0) >= c.budget : spentDay + linked >= o.amount),
+        paid: (state.skipped ?? []).includes(key) || linked >= o.amount || (monthly ? (rep?.spent ?? 0) >= budgetFor(c, r.month) : spentDay + linked >= o.amount),
         color: color.get(c.group ?? '') ?? '#A3A9B3',
       });
     }
@@ -726,7 +747,8 @@ export function planOf(c: Category): Plan | null {
 /** Jours du mois où cette enveloppe est prévue, avec le montant affecté à chacun. */
 export function occurrences(c: Category, month: string): { day: number; amount: number }[] {
   const p = planOf(c);
-  if (!p || c.budget <= 0) return [];
+  const budget = budgetFor(c, month);
+  if (!p || budget <= 0) return [];
   const dim = daysIn(month);
   const [y, m] = month.split('-').map(Number);
   let days: number[] = [];
@@ -738,8 +760,8 @@ export function occurrences(c: Category, month: string): { day: number; amount: 
   } else if (p.freq === 'dates') days = [...new Set((p.dates ?? []).map((d) => Math.min(d, dim)))].sort((a, b) => a - b);
   if (!days.length) return [];
   // Répartition au franc près : le dernier jour absorbe l'arrondi.
-  const base = Math.floor(c.budget / days.length / 50) * 50;
-  return days.map((day, i) => ({ day, amount: i === days.length - 1 ? c.budget - base * (days.length - 1) : base }));
+  const base = Math.floor(budget / days.length / 50) * 50;
+  return days.map((day, i) => ({ day, amount: i === days.length - 1 ? budget - base * (days.length - 1) : base }));
 }
 
 export interface PeriodView { label: string; allotted: number; spent: number; remaining: number }
@@ -785,8 +807,9 @@ export function todayTodos(state: State, today: Date): Todo[] {
 export type PendingStatus = 'overdue' | 'today' | 'soon';
 export interface PendingItem {
   key: string;
-  kind: 'category' | 'goal';
+  kind: 'category' | 'goal' | 'planned';
   refId: string;
+  plannedId?: string;
   name: string;
   icon: string;
   logo?: string;
@@ -801,6 +824,7 @@ export interface PendingItem {
 
 export const planKey = (categoryId: string, date: string) => `${categoryId}@${date}`;
 export const goalKey = (goalId: string, month: string) => `goal:${goalId}@${month}`;
+export const plannedKey = (id: string) => `plan:${id}`;
 
 /** Effective monthly saving for a goal (fixed amount or computed from the deadline). */
 export const goalPlanned = (g: Goal, month: string) => (g.monthly && g.monthly > 0 ? g.monthly : goalMonthly(g, month));
@@ -822,7 +846,7 @@ export function pendingItems(state: State, today: Date, horizon = 7): PendingIte
   const months = today.getDate() + horizon > daysIn(month) ? [month, shiftMonth(month, 1)] : [month];
 
   for (const c of state.categories) {
-    if (c.hidden || c.budget <= 0) continue;
+    if (c.hidden) continue;
     const p = planOf(c);
     if (!p) continue;
     let soon = 0;
@@ -851,10 +875,25 @@ export function pendingItems(state: State, today: Date, horizon = 7): PendingIte
         if (date > iso) soon++;
         out.push({
           key, kind: 'category', refId: c.id, name: c.name, icon: c.icon, logo: c.logo, date,
-          amount: left, planned: o.amount, status: status(date), obligatory: c.kind === 'obligatory',
+          amount: left, planned: o.amount, status: status(date), obligatory: c.kind === 'obligatory', walletId: c.sourceWalletId,
         });
       }
     }
+  }
+
+  // Dépenses prévues ponctuellement sur une date
+  const monthStart = `${month}-01`;
+  for (const pl of state.planned ?? []) {
+    if (pl.date > last || pl.date < monthStart && pl.date < weekAgo) continue;
+    const key = plannedKey(pl.id);
+    if (skipped.has(key)) continue;
+    const c = state.categories.find((x) => x.id === pl.categoryId);
+    const done = exp.filter((t) => t.planKey === key).reduce((a, t) => a + t.amount, 0);
+    if (done >= pl.amount) continue;
+    out.push({
+      key, kind: 'planned', refId: pl.categoryId, plannedId: pl.id, name: pl.note || c?.name || 'Dépense prévue', icon: c?.icon ?? 'tag', logo: c?.logo,
+      date: pl.date, amount: pl.amount - done, planned: pl.amount, status: status(pl.date), obligatory: c?.kind === 'obligatory', walletId: pl.walletId ?? c?.sourceWalletId,
+    });
   }
 
   for (const g of state.goals ?? []) {
@@ -921,4 +960,145 @@ export function lockCheck(state: State, walletId: string | undefined, amount: nu
   const a = availability(state, walletId);
   if (a.locked <= 0 || amount <= a.available) return null;
   return { ...a, missing: amount - Math.max(0, a.available) };
+}
+
+// ---------------------------------------------------------------------
+// Séquences : mois concernés et budget propre à chaque mois
+// ---------------------------------------------------------------------
+export const MONTHS_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+/** Budget de l'enveloppe pour un mois donné (0 si le mois n'est pas concerné). */
+export function budgetFor(c: Category, month: string): number {
+  const m = Number(month.slice(5, 7));
+  if (c.months?.length && !c.months.includes(m)) return 0;
+  return c.budgets?.[month] ?? c.budget;
+}
+export const catsForMonth = (cats: Category[], month: string): Category[] =>
+  cats.map((c) => { const b = budgetFor(c, month); return b === c.budget ? c : { ...c, budget: b }; });
+
+/** Évolution mois par mois : budget, dépensé, reste (pour une enveloppe ou pour tout le budget). */
+export function monthlyEvolution(state: State, from: string, count: number, categoryId?: string) {
+  const isConso = (c?: Category) => !!c && c.kind !== 'savings';
+  return Array.from({ length: count }, (_, i) => {
+    const month = shiftMonth(from, i);
+    const cats = state.categories.filter((c) => (categoryId ? c.id === categoryId : isConso(c) && !c.hidden));
+    const budget = cats.reduce((a, c) => a + budgetFor(c, month), 0);
+    const ids = new Set(cats.map((c) => c.id));
+    const spent = state.txs.filter((t) => t.type === 'expense' && t.date.startsWith(month) && ids.has(t.categoryId ?? '')).reduce((a, t) => a + t.amount, 0);
+    return { month, budget, spent, remaining: budget - spent };
+  });
+}
+
+// ---------------------------------------------------------------------
+// Enveloppes approvisionnées depuis les comptes
+// ---------------------------------------------------------------------
+export interface EnvelopeView {
+  categoryId: string;
+  month: string;
+  budget: number;
+  spent: number;
+  /** Ce qui reste dans le budget du mois. */
+  remaining: number;
+  /** Total approvisionné ce mois. */
+  funded: number;
+  /** Encore à approvisionner pour couvrir le budget. */
+  toFund: number;
+  /** Argent encore réservé sur chaque compte (approvisionné − dépensé). */
+  byWallet: { walletId: string; funded: number; reserved: number }[];
+  reserved: number;
+}
+
+export function envelopeView(state: State, c: Category, month: string): EnvelopeView {
+  const budget = budgetFor(c, month);
+  const fund = new Map<string, number>();
+  for (const f of state.fundings ?? []) if (f.categoryId === c.id && f.date.startsWith(month)) fund.set(f.walletId, (fund.get(f.walletId) ?? 0) + f.amount);
+  const spentW = new Map<string, number>();
+  let spent = 0;
+  for (const t of state.txs) {
+    if (t.type !== 'expense' || t.categoryId !== c.id || !t.date.startsWith(month)) continue;
+    spent += t.amount;
+    const w = t.walletId ?? '';
+    spentW.set(w, (spentW.get(w) ?? 0) + t.amount);
+  }
+  // Les dépenses consomment d'abord l'argent réservé sur le même compte, puis celui des autres comptes.
+  const rem = new Map(fund);
+  let overflow = 0;
+  for (const [w, sp] of spentW) {
+    const r = rem.get(w) ?? 0;
+    const take = Math.min(r, sp);
+    if (rem.has(w)) rem.set(w, r - take);
+    overflow += sp - take;
+  }
+  for (const [w, r] of [...rem].sort((a, b) => b[1] - a[1])) {
+    if (overflow <= 0) break;
+    const take = Math.min(r, overflow);
+    rem.set(w, r - take);
+    overflow -= take;
+  }
+  const funded = [...fund.values()].reduce((a, b) => a + b, 0);
+  const byWallet = [...fund].map(([walletId, f]) => ({ walletId, funded: f, reserved: Math.max(0, rem.get(walletId) ?? 0) }));
+  return {
+    categoryId: c.id, month, budget, spent, remaining: budget - spent, funded, toFund: Math.max(0, budget - funded),
+    byWallet, reserved: byWallet.reduce((a, x) => a + x.reserved, 0),
+  };
+}
+
+/** Argent réservé aux enveloppes, compte par compte (mois donné). */
+export function envelopeReservations(state: State, month: string) {
+  const out = new Map<string, { categoryId: string; name: string; amount: number }[]>();
+  if (!state.fundings?.length) return out;
+  const ids = new Set(state.fundings.filter((f) => f.date.startsWith(month)).map((f) => f.categoryId));
+  for (const c of state.categories) {
+    if (!ids.has(c.id)) continue;
+    for (const w of envelopeView(state, c, month).byWallet) {
+      if (w.reserved <= 0) continue;
+      out.set(w.walletId, [...(out.get(w.walletId) ?? []), { categoryId: c.id, name: c.name, amount: w.reserved }]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Une dépense dépasse-t-elle ce qui reste dans l'enveloppe ? Renvoie le montant manquant (0 sinon).
+ * Les enveloppes sans budget ne sont pas concernées.
+ */
+export function envelopeShortfall(state: State, categoryId: string | undefined, amount: number, month: string): { left: number; missing: number; budget: number } | null {
+  const c = state.categories.find((x) => x.id === categoryId);
+  if (!c || amount <= 0) return null;
+  const budget = budgetFor(c, month);
+  if (budget <= 0) return null;
+  const spent = state.txs.filter((t) => t.type === 'expense' && t.categoryId === c.id && t.date.startsWith(month)).reduce((a, t) => a + t.amount, 0);
+  const left = budget - spent;
+  return amount > left ? { left, missing: amount - Math.max(0, left), budget } : null;
+}
+
+/** Compléter une enveloppe depuis un compte : budget du mois relevé + approvisionnement. */
+export function topUpEnvelope(state: State, categoryId: string, walletId: string, amount: number, date: string, id: string): State {
+  const month = date.slice(0, 7);
+  return {
+    ...state,
+    categories: state.categories.map((c) => (c.id === categoryId ? { ...c, budgets: { ...(c.budgets ?? {}), [month]: budgetFor(c, month) + amount } } : c)),
+    fundings: [...(state.fundings ?? []), { id, date, categoryId, walletId, amount, note: 'Complément' }],
+  };
+}
+
+/** Approvisionner une enveloppe ; si on dépasse le budget du mois, il est relevé d'autant. */
+export function fundEnvelope(state: State, f: Funding): State {
+  const month = f.date.slice(0, 7);
+  const c = state.categories.find((x) => x.id === f.categoryId);
+  if (!c) return state;
+  const funded = envelopeView(state, c, month).funded + f.amount;
+  const budget = budgetFor(c, month);
+  return {
+    ...state,
+    categories: funded > budget ? state.categories.map((x) => (x.id === c.id ? { ...x, budgets: { ...(x.budgets ?? {}), [month]: funded } } : x)) : state.categories,
+    fundings: [...(state.fundings ?? []), f],
+  };
+}
+
+/** Solde, part bloquée (projets), part réservée (enveloppes) et part libre d'un compte. */
+export function walletFree(state: State, walletId: string, month: string) {
+  const w = walletReports({ ...state, wallets: state.wallets.map((x) => ({ ...x, hidden: false })) }, '9999-12-31', month).find((x) => x.id === walletId);
+  if (!w) return { balance: 0, locked: 0, reserved: 0, free: 0 };
+  return { balance: w.balance, locked: w.locked, reserved: w.reservedBudget, free: w.balance - w.locked - w.reservedBudget };
 }

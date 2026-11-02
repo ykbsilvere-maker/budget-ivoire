@@ -272,3 +272,56 @@ test('mode discret : les montants affichés sont masqués, la saisie non', async
   setMaskAmounts(false);
   assert.equal(fmt(25000), '25 000');
 });
+
+test('séquences : mois concernés et budget propre à un mois', async () => {
+  const { budgetFor, occurrences, monthlyEvolution } = await import('./engine');
+  const s = blank();
+  const school = { ...s.categories.find((c) => c.id === 'c_school')!, budget: 50000, months: [9, 10, 11, 12, 1, 2, 3, 4, 5, 6], budgets: { '2026-09': 150000 } };
+  s.categories = s.categories.map((c) => (c.id === 'c_school' ? school : c));
+  assert.equal(budgetFor(school, '2026-07'), 0); // vacances
+  assert.equal(budgetFor(school, '2026-09'), 150000); // rentrée
+  assert.equal(budgetFor(school, '2026-10'), 50000);
+  assert.deepEqual(occurrences(school, '2026-07'), []);
+  assert.equal(computeMonth(s, '2026-09', new Date(2026, 8, 15)).categories.find((c) => c.id === 'c_school')!.budget, 150000);
+  assert.equal(computeMonth(s, '2026-08', new Date(2026, 7, 15)).categories.find((c) => c.id === 'c_school')!.budget, 0);
+  s.txs.push(tx({ amount: 40000, categoryId: 'c_school', walletId: 'w_bank', date: '2026-10-10' }));
+  const evo = monthlyEvolution(s, '2026-09', 2, 'c_school');
+  assert.deepEqual(evo.map((e) => [e.month, e.budget, e.spent, e.remaining]), [['2026-09', 150000, 0, 150000], ['2026-10', 50000, 40000, 10000]]);
+});
+
+test('enveloppes approvisionnées : argent réservé sur le compte, dépenses qui le consomment, complément', async () => {
+  const { envelopeView, fundEnvelope, walletFree, envelopeShortfall, topUpEnvelope, budgetFor } = await import('./engine');
+  let s = blank();
+  s.wallets = s.wallets.map((w) => (w.id === 'w_wave' ? { ...w, initialBalance: 250000 } : w));
+  s = fundEnvelope(s, { id: 'f1', date: '2026-11-01', categoryId: 'c_transport', walletId: 'w_wave', amount: 60000 });
+  let wf = walletFree(s, 'w_wave', '2026-11');
+  assert.deepEqual([wf.balance, wf.reserved, wf.free], [250000, 60000, 190000]);
+  s.txs.push(tx({ amount: 15000, categoryId: 'c_transport', walletId: 'w_wave', date: '2026-11-03' }));
+  s.txs.push(tx({ amount: 5000, categoryId: 'c_transport', walletId: 'w_cash', date: '2026-11-04' })); // payé en espèces : consomme quand même l'enveloppe
+  const ev = envelopeView(s, s.categories.find((c) => c.id === 'c_transport')!, '2026-11');
+  assert.deepEqual([ev.budget, ev.funded, ev.spent, ev.remaining, ev.reserved, ev.toFund], [60000, 60000, 20000, 40000, 40000, 0]);
+  wf = walletFree(s, 'w_wave', '2026-11');
+  assert.deepEqual([wf.balance, wf.reserved, wf.free], [235000, 40000, 195000]);
+  // Approvisionner au-delà du budget relève le budget du mois seulement
+  s = fundEnvelope(s, { id: 'f2', date: '2026-11-05', categoryId: 'c_transport', walletId: 'w_wave', amount: 10000 });
+  const t = s.categories.find((c) => c.id === 'c_transport')!;
+  assert.equal(budgetFor(t, '2026-11'), 70000);
+  assert.equal(budgetFor(t, '2026-12'), 60000);
+  // Pas assez : il manque 5 000 → complément depuis un compte
+  const short = envelopeShortfall(s, 'c_transport', 55000, '2026-11')!;
+  assert.deepEqual([short.left, short.missing], [50000, 5000]);
+  s = topUpEnvelope(s, 'c_transport', 'w_wave', 5000, '2026-11-06', 'f3');
+  assert.equal(budgetFor(s.categories.find((c) => c.id === 'c_transport')!, '2026-11'), 75000);
+  assert.equal(envelopeShortfall(s, 'c_transport', 55000, '2026-11'), null);
+});
+
+test('dépense prévue sur une date : dans « À régler » jusqu’au paiement', async () => {
+  const { pendingItems, plannedKey } = await import('./engine');
+  const s = blank();
+  s.planned = [{ id: 'p1', date: '2026-11-14', categoryId: 'c_gifts', amount: 25000, walletId: 'w_om', note: 'Anniversaire Awa' }];
+  const today = new Date(2026, 10, 11);
+  const it = pendingItems(s, today).find((i) => i.kind === 'planned')!;
+  assert.deepEqual([it.name, it.amount, it.walletId, it.status], ['Anniversaire Awa', 25000, 'w_om', 'soon']);
+  s.txs.push(tx({ amount: 25000, categoryId: 'c_gifts', walletId: 'w_om', date: '2026-11-14', planKey: plannedKey('p1') }));
+  assert.ok(!pendingItems(s, today).some((i) => i.kind === 'planned'));
+});

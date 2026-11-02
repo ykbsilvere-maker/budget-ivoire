@@ -2,7 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { LuCamera, LuCheck, LuDownload, LuFileText, LuLock, LuPaperclip, LuTrash2, LuX } from 'react-icons/lu';
 import type { Attachment, Tx } from '../engine';
-import { fmt, fmtN, fromISO, lockCheck, planKey, toISODate } from '../engine';
+import { envelopeShortfall, fmt, fmtN, fromISO, lockCheck, planKey, toISODate, topUpEnvelope } from '../engine';
+import { TopUpPanel, type TopUp } from './Envelope';
+import { uid } from '../store';
 import type { Store } from '../store';
 import { Btn, Label, Money, Sheet, cx, inputCls } from '../ui';
 import { Glyph } from '../icons';
@@ -10,7 +12,7 @@ import { addAttachment, fileSize, getAttachment, removeAttachment } from '../ser
 import { isNative, saveFile } from '../services/native';
 import { useBackHandler } from '../services/back';
 
-export interface PayTarget { categoryId: string; date: string; amount: number }
+export interface PayTarget { categoryId: string; date: string; amount: number; key?: string; walletId?: string; note?: string }
 
 export const dateLabel = (date: string, today = toISODate(new Date())) => {
   if (date === today) return 'Aujourd’hui';
@@ -36,22 +38,27 @@ export function PaySheet({
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<Attachment[]>([]);
   const [more, setMore] = useState(false);
+  const [topUp, setTopUp] = useState<TopUp>({ on: true, walletId: 'w_cash' });
   useEffect(() => {
     if (!target) return;
     setAmount(target.amount);
-    setWallet(usualWallet(store, target.categoryId));
+    const w = target.walletId ?? store.state.categories.find((c) => c.id === target.categoryId)?.sourceWalletId ?? usualWallet(store, target.categoryId);
+    setWallet(w);
+    setTopUp({ on: true, walletId: w });
     const today = toISODate(new Date());
     setDate(target.date < today ? target.date : today);
-    setNote(''); setFiles([]); setMore(false);
+    setNote(target.note ?? ''); setFiles([]); setMore(false);
   }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!target) return null;
   const cat = store.state.categories.find((c) => c.id === target.categoryId);
   if (!cat) return null;
   const blocked = lockCheck(store.state, wallet, amount);
-  const key = planKey(target.categoryId, target.date);
+  const key = target.key ?? planKey(target.categoryId, target.date);
 
   const pay = () => {
     if (amount <= 0 || blocked) return;
+    const short = envelopeShortfall(store.state, cat.id, amount, date.slice(0, 7));
+    if (short && topUp.on) store.setAll((s) => topUpEnvelope(s, cat.id, topUp.walletId, short.missing, date, uid('f')));
     const id = store.addTx({ type: 'expense', amount, date, categoryId: cat.id, walletId: wallet, note: note || undefined, planKey: key, attachments: files.length ? files : undefined });
     onDone(`${cat.name} : ${fmt(amount)} XOF payé ✓`, [id]);
   };
@@ -84,8 +91,9 @@ export function PaySheet({
         className={cx(inputCls, 'num text-center text-[26px] font-extrabold')} />
 
       <Label>Payé avec</Label>
-      <WalletRow store={store} value={wallet} onChange={setWallet} />
+      <WalletRow store={store} value={wallet} onChange={(w) => { setWallet(w); setTopUp((t) => ({ ...t, walletId: w })); }} />
       {blocked && <LockedNotice blocked={blocked} amount={amount} onUnlock={(g) => { onClose(); onUnlock(g); }} />}
+      <TopUpPanel store={store} categoryId={cat.id} amount={amount} date={date} value={topUp} onChange={setTopUp} />
 
       <Label>Justificatif (facultatif)</Label>
       <AttachmentsField value={files} onChange={setFiles} />

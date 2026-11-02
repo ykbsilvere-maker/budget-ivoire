@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { LuChevronLeft, LuChevronRight, LuSearch, LuPlus, LuCheck, LuPaperclip } from 'react-icons/lu';
+import { LuChevronLeft, LuChevronRight, LuSearch, LuPlus, LuCheck, LuPaperclip, LuCalendarPlus, LuWallet, LuTrash2 } from 'react-icons/lu';
+import type { ReactNode } from 'react';
 import type { MonthReport, State, Tx } from '../engine';
-import { daysIn, fmt, fmtK, isMaskOn, fromISO, monthDues, pad, shiftMonth, toISODate } from '../engine';
+import { daysIn, fmt, fmtK, isMaskOn, plannedKey, fromISO, monthDues, pad, shiftMonth, toISODate } from '../engine';
 import { Empty, Money, Segmented, cx, inputCls } from '../ui';
 import { Glyph } from '../icons';
 import type { PayTarget } from '../sheets/PaySheet';
@@ -35,10 +36,10 @@ export function TxRow({ t, state, onClick }: { t: Tx; state: State; onClick?: ()
 }
 
 export function CalendarScreen({
-  state, r, month, setMonth, onEdit, onAdd, onPay,
+  state, r, month, setMonth, onEdit, onAdd, onPay, onPlan, onFund, onRemovePlanned,
 }: {
   state: State; r: MonthReport; month: string; setMonth: (m: string) => void; onEdit: (t: Tx) => void; onAdd: (date: string) => void;
-  onPay: (p: PayTarget) => void;
+  onPay: (p: PayTarget) => void; onPlan: (date: string) => void; onFund: (date: string) => void; onRemovePlanned: (id: string) => void;
 }) {
   const today = toISODate(new Date());
   const [sel, setSel] = useState(() => (today.startsWith(month) ? today : `${month}-01`));
@@ -63,6 +64,8 @@ export function CalendarScreen({
   };
 
   const dues = useMemo(() => monthDues(state, r), [state, r]);
+  const plannedOn = (d: string) => (state.planned ?? []).filter((p) => p.date === d);
+  const fundsOn = (d: string) => (state.fundings ?? []).filter((f) => f.date === d);
   const dueByDay = (d: number) => dues.filter((x) => x.day === d);
   const base = Math.max(r.incomeReceived, r.expectedIncome, 1);
   const upcoming = dues.filter((d) => !d.paid && d.day >= (today.startsWith(month) ? Number(today.slice(8)) : 1)).filter((d, i, a) => a.findIndex((x) => x.categoryId === d.categoryId) === i).slice(0, 10);
@@ -145,6 +148,7 @@ export function CalendarScreen({
                       </span>
                     )}
                     {oblig && !dueByDay(day).length && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-ink/60" />}
+                    {(plannedOn(key).length > 0 || fundsOn(key).length > 0) && <span className="absolute bottom-0.5 left-1/2 h-1 w-3 -translate-x-1/2 rounded-full bg-primary" />}
                   </button>
                 );
               })}
@@ -159,8 +163,35 @@ export function CalendarScreen({
               <h3 className="text-[15px] font-bold capitalize">
                 {fromISO(sel).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
               </h3>
-              <button onClick={() => onAdd(sel)} className="flex items-center gap-1 rounded-xl bg-surface2 px-2.5 py-1.5 text-xs font-bold text-primary"><LuPlus size={14} /> Ajouter</button>
             </div>
+            <div className="mt-2 grid grid-cols-3 gap-1.5">
+              <DayAction icon={<LuCalendarPlus size={18} />} label="Prévoir" onClick={() => onPlan(sel)} />
+              <DayAction icon={<LuWallet size={18} />} label="Approvisionner" onClick={() => onFund(sel)} />
+              <DayAction icon={<LuPlus size={18} />} label="Noter" onClick={() => onAdd(sel)} />
+            </div>
+            {plannedOn(sel).map((p) => {
+              const c = state.categories.find((x) => x.id === p.categoryId);
+              const done = state.txs.some((t) => t.planKey === plannedKey(p.id));
+              return (
+                <div key={p.id} className="mt-2 flex items-center gap-3 rounded-2xl bg-surface2 px-2 py-2">
+                  <Glyph icon={c?.icon} logo={c?.logo} label={c?.name} size={36} />
+                  <span className="min-w-0 flex-1 text-[13.5px] font-semibold"><span className="block truncate">{p.note || c?.name}</span><span className="num block truncate text-[12px] font-bold">{fmt(p.amount)} XOF <span className="font-normal text-muted">· {done ? 'payé ✓' : 'prévu'}</span></span></span>
+                  {!done && <button onClick={() => onPay({ categoryId: p.categoryId, date: p.date, amount: p.amount, key: plannedKey(p.id), walletId: p.walletId, note: p.note })} className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-onprimary" aria-label="Marquer comme payé"><LuCheck size={16} strokeWidth={3} /></button>}
+                  {!done && <button onClick={() => onRemovePlanned(p.id)} className="grid h-8 w-8 place-items-center rounded-lg text-muted" aria-label="Supprimer la dépense prévue"><LuTrash2 size={15} /></button>}
+                </div>
+              );
+            })}
+            {fundsOn(sel).map((f) => {
+              const c = state.categories.find((x) => x.id === f.categoryId);
+              const w = state.wallets.find((x) => x.id === f.walletId);
+              return (
+                <div key={f.id} className="mt-2 flex items-center gap-3 rounded-2xl bg-primary/8 px-2 py-2">
+                  <Glyph icon={c?.icon} logo={c?.logo} label={c?.name} size={36} />
+                  <span className="min-w-0 flex-1 text-[13.5px] font-semibold"><span className="block truncate">{c?.name} approvisionné</span><span className="block truncate text-[11.5px] font-normal text-muted">depuis {w?.name}{f.note ? ` · ${f.note}` : ''}</span></span>
+                  <b className="num whitespace-nowrap text-[13.5px] text-primary">{fmt(f.amount)} XOF</b>
+                </div>
+              );
+            })}
             <div className="mt-2 grid grid-cols-3 gap-2 text-center">
               <Mini label="Dépensé" v={dayAll} />
               <Mini label="Encaissé" v={dayIn} tone="text-ok" />
@@ -230,5 +261,13 @@ function Mini({ label, v, tone, sub }: { label: string; v: number; tone?: string
       <Money v={v} className={cx('text-[14px] font-bold', tone, v < 0 && 'text-danger')} />
       {sub && <div className="text-[10px] font-semibold text-danger">{sub}</div>}
     </div>
+  );
+}
+
+function DayAction({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex flex-col items-center gap-1 rounded-2xl bg-surface2 px-1 py-2 text-[11.5px] font-bold text-primary active:bg-primary/15">
+      {icon}<span className="w-full truncate text-center">{label}</span>
+    </button>
   );
 }

@@ -48,6 +48,20 @@ export function buildSchedule(state: State, now: Date, days = 30): PlannedRemind
         }
       }
     }
+    // Dépenses prévues ponctuellement (posées sur le calendrier)
+    for (const pl of state.planned ?? []) {
+      if (state.txs.some((t) => t.planKey === `plan:${pl.id}`)) continue;
+      const [y, mo, da] = pl.date.split('-').map(Number);
+      const d = new Date(y, mo - 1, da - (r.dayBefore ? 1 : 0));
+      const at = atTime(d, r.dueTime);
+      if (at <= now || at > end) continue;
+      const c = state.categories.find((x) => x.id === pl.categoryId);
+      out.push({
+        id: 0, at,
+        title: `${pl.note || c?.name || 'Dépense prévue'} : ${fmt(pl.amount)} XOF${r.dayBefore ? ' demain' : ' aujourd’hui'}`,
+        body: 'Dépense prévue. Une fois faite, touche « ✓ Payé » dans « À régler ».',
+      });
+    }
     // Versements prévus pour les projets (objectifs)
     for (const g of state.goals ?? []) {
       if (!g.day || g.remind === false || g.paused || g.doneAt) continue;
