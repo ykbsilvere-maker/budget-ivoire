@@ -1,0 +1,69 @@
+# Construit automatiquement l'APK Android à chaque push sur main
+# (ou manuellement : onglet Actions > "Build APK Android" > Run workflow).
+# L'APK se télécharge dans Actions > le dernier run > Artifacts.
+name: Build APK Android
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Installer les dépendances
+        run: npm install
+
+      - name: Tests du moteur de calcul
+        run: npm test
+
+      - name: Build web
+        # Les comptes utilisent par défaut le serveur Supabase défini dans src/config.tsx.
+        # Variable facultative API_BASE (Settings > Secrets and variables > Actions > Variables) pour le remplacer.
+        env:
+          API_BASE: ${{ vars.API_BASE }}
+        run: npm run build
+
+      - name: Créer / synchroniser le projet Android
+        run: |
+          [ -d android ] || npx cap add android
+          npx cap sync android
+
+      - name: Icône de l'application
+        run: |
+          command -v convert || (sudo apt-get update && sudo apt-get install -y imagemagick)
+          for d in mipmap-mdpi:48 mipmap-hdpi:72 mipmap-xhdpi:96 mipmap-xxhdpi:144 mipmap-xxxhdpi:192; do
+            dir=${d%%:*}; size=${d##*:}
+            mkdir -p android/app/src/main/res/$dir
+            convert resources/icon.png -resize ${size}x${size} android/app/src/main/res/$dir/ic_launcher.png
+            convert resources/icon.png -resize ${size}x${size} android/app/src/main/res/$dir/ic_launcher_round.png
+            convert resources/icon.png -resize ${size}x${size} android/app/src/main/res/$dir/ic_launcher_foreground.png
+          done
+
+      - name: Compiler l'APK (debug, installable directement)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Renommer l'APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk budget-ivoire.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: budget-ivoire-apk
+          path: budget-ivoire.apk

@@ -1,0 +1,8 @@
+{
+  "appId": "ci.budgetivoire.app",
+  "appName": "Budget Ivoire",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#F5F8F6"
+  }
+}
