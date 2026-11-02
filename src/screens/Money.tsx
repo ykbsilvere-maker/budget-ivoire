@@ -28,8 +28,8 @@ export function MoneyScreen({
         <div className="text-[12px] font-semibold uppercase tracking-wider text-muted">Mon patrimoine</div>
         <Money v={r.netWorth} className="block text-[34px] font-extrabold" />
         <div className="mt-1 flex justify-center gap-2 text-[12px]">
-          <span className="rounded-full bg-surface2 px-3 py-1">Disponible <b className="num">{fmt(r.totalCash)} F</b></span>
-          <span className="rounded-full bg-surface2 px-3 py-1">Reste à vivre <b className="num">{fmt(r.resteAVivre)} F</b></span>
+          <span className="rounded-full bg-surface2 px-3 py-1">Disponible <b className="num">{fmt(r.totalCash)} XOF</b></span>
+          <span className="rounded-full bg-surface2 px-3 py-1">Reste à vivre <b className="num">{fmt(r.resteAVivre)} XOF</b></span>
         </div>
       </section>
 
@@ -77,7 +77,7 @@ function WalletCard({ w, color, onClick }: { w: WalletReport; color: string; onC
         <span className="truncate text-[12.5px] font-semibold">{w.name}</span>
       </span>
       <span>
-        <span className={cx('num block text-[19px] font-extrabold leading-tight', w.balance < 0 && 'text-[#FFC9C9]')}>{fmt(w.balance)} F</span>
+        <span className={cx('num block text-[19px] font-extrabold leading-tight', w.balance < 0 && 'text-[#FFC9C9]')}>{fmt(w.balance)} XOF</span>
         <span className="block text-[10px] opacity-75">{w.source === 'declared' ? 'Solde déclaré' : 'Synchronisé'}</span>
       </span>
     </button>

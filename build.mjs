@@ -15,7 +15,15 @@ await fs.rm(dist, { recursive: true, force: true });
 await fs.mkdir(path.join(dist, 'assets'), { recursive: true });
 
 // 1) JavaScript
+// Modules Capacitor : les vrais s'ils sont installés (GitHub Actions), sinon un remplaçant web.
+const capMods = ['@capacitor/core', '@capacitor/local-notifications', '@capacitor/filesystem', '@capacitor/share'];
+const alias = {};
+for (const m of capMods) {
+  try { require.resolve(m, { paths: [root] }); } catch { alias[m] = path.join(root, 'src/shims/capacitor.ts'); }
+}
+if (Object.keys(alias).length) console.log('ℹ︎ Capacitor non installé : remplaçant web pour', Object.keys(alias).join(', '));
 await build({
+  alias,
   entryPoints: [path.join(root, 'src/main.tsx')],
   bundle: true,
   minify: true,

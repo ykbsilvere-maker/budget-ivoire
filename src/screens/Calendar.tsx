@@ -63,7 +63,7 @@ export function CalendarScreen({
   const dues = useMemo(() => monthDues(state, r), [state, r]);
   const dueByDay = (d: number) => dues.filter((x) => x.day === d);
   const base = Math.max(r.incomeReceived, r.expectedIncome, 1);
-  const upcoming = dues.filter((d) => !d.paid && d.day >= (today.startsWith(month) ? Number(today.slice(8)) : 1));
+  const upcoming = dues.filter((d) => !d.paid && d.day >= (today.startsWith(month) ? Number(today.slice(8)) : 1)).filter((d, i, a) => a.findIndex((x) => x.categoryId === d.categoryId) === i).slice(0, 10);
   const dayTx = byDay.get(sel) ?? [];
   const selDay = Number(sel.slice(8));
   const daySpent = r.dailySpend[selDay - 1] ?? 0;
@@ -95,14 +95,14 @@ export function CalendarScreen({
         <button onClick={() => go(-1)} className="grid h-10 w-10 place-items-center rounded-2xl bg-surface2" aria-label="Mois précédent"><LuChevronLeft /></button>
         <div className="text-center">
           <div className="text-[17px] font-bold capitalize">{monthLabel}</div>
-          <div className="text-[11.5px] text-muted">Dépensé <b className="text-ink">{fmt(r.spent)} F</b> · repère {fmt(dailyRef)} F/j</div>
+          <div className="text-[11.5px] text-muted">Dépensé <b className="text-ink">{fmt(r.spent)} XOF</b> · repère {fmt(dailyRef)} XOF/j</div>
         </div>
         <button onClick={() => go(1)} className="grid h-10 w-10 place-items-center rounded-2xl bg-surface2" aria-label="Mois suivant"><LuChevronRight /></button>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <div className="card px-3 py-2"><div className="text-[11px] text-muted">Dépensé</div><div className="num text-[17px] font-extrabold">{fmt(r.spent)} F <span className="text-[12px] font-semibold text-muted">{Math.round((r.spent / base) * 100)} %</span></div></div>
-        <div className="card px-3 py-2"><div className="text-[11px] text-muted">Épargne</div><div className="num text-[17px] font-extrabold text-primary">{fmt(r.savingsDone)} F <span className="text-[12px] font-semibold text-muted">{Math.round((r.savingsDone / base) * 100)} %</span></div></div>
+        <div className="card px-3 py-2"><div className="text-[11px] text-muted">Dépensé</div><div className="num text-[17px] font-extrabold">{fmt(r.spent)} XOF <span className="text-[12px] font-semibold text-muted">{Math.round((r.spent / base) * 100)} %</span></div></div>
+        <div className="card px-3 py-2"><div className="text-[11px] text-muted">Épargne</div><div className="num text-[17px] font-extrabold text-primary">{fmt(r.savingsDone)} XOF <span className="text-[12px] font-semibold text-muted">{Math.round((r.savingsDone / base) * 100)} %</span></div></div>
       </div>
 
       <Segmented value={view} onChange={setView} small options={[{ value: 'month', label: 'Calendrier' }, { value: 'list', label: 'Chronologie' }]} />
@@ -172,7 +172,7 @@ export function CalendarScreen({
               <div key={d.categoryId} className="mt-2 flex items-center gap-3 rounded-2xl px-2 py-2" style={{ background: `color-mix(in srgb, ${d.color} 10%, var(--s-surface))` }}>
                 <span className="grid h-9 w-9 place-items-center rounded-xl text-white" style={{ background: d.color }}><Glyph icon={d.icon} label={d.name} size={36} plain /></span>
                 <span className="flex-1 text-[13.5px] font-semibold">{d.name}<span className="block text-[11.5px] font-normal text-muted">{d.paid ? 'Payé ce mois ✓' : 'Échéance du jour'}</span></span>
-                <b className="num text-[14px]">{fmt(d.amount)} F</b>
+                <b className="num text-[14px]">{fmt(d.amount)} XOF</b>
               </div>
             ))}
             <div className="mt-2">
@@ -187,7 +187,7 @@ export function CalendarScreen({
                   <span className="grid h-8 w-8 place-items-center rounded-lg text-white" style={{ background: d.color }}><Glyph icon={d.icon} label={d.name} size={32} plain /></span>
                   <span className="flex-1 text-[13.5px] font-semibold">{d.name}</span>
                   <span className="text-[12px] text-muted">le {d.day}</span>
-                  <b className="num w-24 text-right text-[13.5px]">{fmt(d.amount)} F</b>
+                  <b className="num w-24 text-right text-[13.5px]">{fmt(d.amount)} XOF</b>
                 </div>
               ))}
             </div>

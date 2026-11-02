@@ -12,9 +12,10 @@ export type AddMode = 'expense' | 'income' | 'transfer';
 const PAY_TO_WALLET: Record<string, string> = { cash: 'w_cash', wave: 'w_wave', orange: 'w_om', mtn: 'w_mtn', moov: 'w_moov', card: 'w_bank', bank: 'w_bank' };
 
 export function AddSheet({
-  open, onClose, store, initialMode = 'expense', initialDate, autoScan, onSaved,
+  open, onClose, store, initialMode = 'expense', initialDate, autoScan, onSaved, initialAmount, initialCategory,
 }: {
   open: boolean; onClose: () => void; store: Store; initialMode?: AddMode; initialDate?: string; autoScan?: boolean;
+  initialAmount?: number; initialCategory?: string;
   onSaved: (msg: string, ids: string[]) => void;
 }) {
   const { state } = store;
@@ -45,11 +46,12 @@ export function AddSheet({
 
   useEffect(() => {
     if (!open) return;
-    setMode(initialMode); setAmount(''); setNote(''); setFee(''); setDupWarn(null); setHeard(''); setScan(null);
-    setVoiceMissing([]); setCatTouched(false); setDate(initialDate ?? toISODate(new Date()));
+    setMode(initialMode); setAmount(initialAmount ? String(initialAmount) : ''); setNote('');
+    if (initialCategory) { setCat(initialCategory); } setFee(''); setDupWarn(null); setHeard(''); setScan(null);
+    setVoiceMissing([]); setCatTouched(!!initialCategory); setDate(initialDate ?? toISODate(new Date()));
     if (autoScan) setTimeout(() => fileRef.current?.click(), 150);
     else setTimeout(() => amountRef.current?.focus(), 250);
-  }, [open, initialMode, initialDate, autoScan]);
+  }, [open, initialMode, initialDate, autoScan, initialAmount, initialCategory]);
 
   // Catégorie proposée automatiquement à partir de la note
   useEffect(() => {
@@ -92,7 +94,7 @@ export function AddSheet({
       ids.push(store.addTx({ type: 'transfer', amount: n, date, fromWalletId: fromWallet, toWalletId: toWallet, note: note || undefined }));
       const f = Number(fee) || 0;
       if (f > 0) ids.push(store.addTx({ type: 'expense', amount: f, date, categoryId: 'c_fees', walletId: fromWallet, note: 'Frais de transfert' }));
-      onSaved(`Transfert de ${fmt(n)} F enregistré`, ids);
+      onSaved(`Transfert de ${fmt(n)} XOF enregistré`, ids);
       return;
     }
     const draft = { type: mode, amount: n, date, categoryId: mode === 'expense' ? cat : inc, note: note || undefined } as const;
@@ -101,12 +103,12 @@ export function AddSheet({
     ids.push(store.addTx({ ...draft, walletId: wallet }));
     const f = Number(fee) || 0;
     if (mode === 'expense' && f > 0) ids.push(store.addTx({ type: 'expense', amount: f, date, categoryId: 'c_fees', walletId: wallet, note: 'Frais de transaction' }));
-    onSaved(`${mode === 'expense' ? 'Dépense' : 'Revenu'} de ${fmt(n)} F enregistré${mode === 'expense' ? 'e' : ''}`, ids);
+    onSaved(`${mode === 'expense' ? 'Dépense' : 'Revenu'} de ${fmt(n)} XOF enregistré${mode === 'expense' ? 'e' : ''}`, ids);
   }
 
   function repeat(t: Tx) {
     const id = store.addTx({ type: 'expense', amount: t.amount, date: toISODate(new Date()), categoryId: t.categoryId, walletId: t.walletId, note: t.note });
-    onSaved(`${t.note ?? 'Dépense'} · ${fmt(t.amount)} F répétée`, [id]);
+    onSaved(`${t.note ?? 'Dépense'} · ${fmt(t.amount)} XOF répétée`, [id]);
   }
 
   function applySentence(text: string) {
@@ -171,11 +173,11 @@ export function AddSheet({
           {dupWarn && (
             <div className="mb-2 flex items-start gap-2 rounded-2xl bg-surface2 p-3 text-[12.5px]">
               <LuTriangleAlert className="mt-0.5 shrink-0 text-warn" />
-              <span>Déjà noté ? Une opération de {fmt(dupWarn.amount)} F existe le même jour ({dupWarn.note ?? 'même catégorie'}).</span>
+              <span>Déjà noté ? Une opération de {fmt(dupWarn.amount)} XOF existe le même jour ({dupWarn.note ?? 'même catégorie'}).</span>
             </div>
           )}
           <Btn onClick={() => save(!!dupWarn)} className="w-full" disabled={n <= 0 || (mode === 'transfer' && fromWallet === toWallet)}>
-            {dupWarn ? 'Enregistrer quand même' : mode === 'transfer' ? 'Valider le transfert réel' : `Valider ${n ? fmt(n) + ' F' : ''}`}
+            {dupWarn ? 'Enregistrer quand même' : mode === 'transfer' ? 'Valider le transfert réel' : `Valider ${n ? fmt(n) + ' XOF' : ''}`}
           </Btn>
         </div>
       }
@@ -192,10 +194,10 @@ export function AddSheet({
           value={amount ? fmt(Number(amount)) : ''}
           onChange={(e) => { setAmount(e.target.value.replace(/\D/g, '').slice(0, 9)); setDupWarn(null); }}
           placeholder="0"
-          aria-label="Montant en FCFA"
+          aria-label="Montant en XOF"
           className="num w-full bg-transparent text-center text-[44px] font-extrabold outline-none placeholder:text-muted/40"
         />
-        <span className="text-lg font-bold text-muted">F</span>
+        <span className="text-lg font-bold text-muted">XOF</span>
       </div>
       <div className="mt-1 flex flex-wrap justify-center gap-1.5">
         {state.settings.presets.map((p) => (
@@ -241,7 +243,7 @@ export function AddSheet({
             ) : scan.result?.readable ? (
               <>
                 <div className="flex items-center gap-1 font-bold text-primary"><LuSparkles /> Proposition à confirmer</div>
-                <div>Nous avons identifié une dépense de <b>{fmt(scan.result.amount ?? 0)} F</b>{scan.result.merchant ? ` chez ${scan.result.merchant}` : ''}.</div>
+                <div>Nous avons identifié une dépense de <b>{fmt(scan.result.amount ?? 0)} XOF</b>{scan.result.merchant ? ` chez ${scan.result.merchant}` : ''}.</div>
                 <div className="text-muted">Vérifie la catégorie et le moyen de paiement avant de valider.</div>
                 {(scan.result.items?.length ?? 0) > 1 && (
                   <button onClick={splitItems} className="mt-1.5 rounded-xl bg-primary px-2.5 py-1 text-[12px] font-bold text-onprimary">
@@ -362,7 +364,7 @@ function WalletPicker({ wallets, value, onChange, bal }: { wallets: { id: string
           <Glyph icon={w.icon} logo={w.logo} label={w.name} size={30} />
           <span>
             <span className="block text-[12.5px] font-semibold leading-tight">{w.name}</span>
-            <span className="num block text-[11px] leading-tight text-muted">{fmt(bal(w.id))} F</span>
+            <span className="num block text-[11px] leading-tight text-muted">{fmt(bal(w.id))} XOF</span>
           </span>
         </button>
       ))}

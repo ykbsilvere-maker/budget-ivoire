@@ -3,7 +3,7 @@
 export const APP = {
   name: 'Budget Ivoire',
   tagline: 'Ton assistant budget',
-  currency: 'FCFA',
+  currency: 'XOF',
   /** Serveur des comptes et de la sauvegarde en ligne (fonction Supabase « api »).
    *  Utilisé par la version web ET par l'APK. */
   apiBase: 'https://qgdzvtpuvoouivkhtwzd.supabase.co/functions/v1',

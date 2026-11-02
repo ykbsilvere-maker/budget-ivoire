@@ -19,6 +19,8 @@ export interface Category {
   group?: string;
   /** Jour du mois où la charge tombe (loyer le 5, CIE le 15…). */
   dueDay?: number;
+  /** Rythme de dépense du budget mensuel, et rappels associés. */
+  plan?: Plan;
   /** Pour les dépenses « ajustables » : réduction maximale autorisée (0–1). */
   maxCut?: number;
   hidden?: boolean;
@@ -69,7 +71,29 @@ export interface Tx {
   history?: TxEdit[];
 }
 
+export type PlanFreq = 'monthly' | 'weekly' | 'daily' | 'dates';
+export interface Plan {
+  freq: PlanFreq;
+  /** Jours de la semaine (0 = dimanche … 6 = samedi) pour le rythme hebdomadaire. */
+  weekdays?: number[];
+  /** Dates du mois (1–31) pour le rythme « dates précises ». */
+  dates?: number[];
+  /** Recevoir un rappel sur le téléphone à chaque échéance. */
+  remind?: boolean;
+}
+
+export interface ReminderSettings {
+  /** Rappel quotidien « pense à noter tes dépenses ». */
+  dailyLog: boolean;
+  logTime: string; // HH:MM
+  /** Rappels des échéances et des enveloppes planifiées. */
+  dues: boolean;
+  dueTime: string; // HH:MM
+  dayBefore: boolean;
+}
+
 export interface Settings {
+  reminders?: ReminderSettings;
   expectedIncome: number;
   /** % de consommation d'une enveloppe déclenchant l'orange. */
   warnPct: number;
@@ -206,7 +230,7 @@ export const shiftMonth = (month: string, delta: number) => {
 };
 
 export const fmt = (n: number) => (Math.round(n) || 0).toLocaleString('fr-FR').replace(/ | /g, ' ');
-export const fmtF = (n: number) => `${fmt(n)} F`;
+export const fmtF = (n: number) => `${fmt(n)} XOF`;
 export const fmtK = (n: number) => {
   const a = Math.abs(n);
   if (a >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.', ',')} M`;
@@ -510,7 +534,7 @@ const NUM_WORDS: Record<string, number> = {
 };
 
 export function parseAmount(text: string): number | undefined {
-  const t = text.toLowerCase().replace(/(\d)[\s  .](?=\d{3}\b)/g, '$1');
+  const t = text.toLowerCase().replace(/\b(xof|fcfa|francs?|cfa)\b/g, ' ').replace(/(\d)[\s  .](?=\d{3}\b)/g, '$1');
   const m = t.match(/(\d+(?:[,.]\d+)?)\s*(mille|k\b|milles)?/);
   if (m) {
     let n = parseFloat(m[1].replace(',', '.'));
@@ -553,7 +577,7 @@ export function toCSV(state: State) {
     state.categories.find((c) => c.id === id)?.name ?? state.incomeCategories.find((c) => c.id === id)?.name ?? '';
   const wal = (id?: string) => state.wallets.find((w) => w.id === id)?.name ?? '';
   const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  const rows = [['Date', 'Type', 'Montant (FCFA)', 'Catégorie', 'Portefeuille', 'Vers', 'Note'].join(';')];
+  const rows = [['Date', 'Type', 'Montant (XOF)', 'Catégorie', 'Portefeuille', 'Vers', 'Note'].join(';')];
   for (const t of [...state.txs].sort((a, b) => a.date.localeCompare(b.date))) {
     rows.push(
       [
@@ -588,19 +612,26 @@ export function groupReports(state: State, r: MonthReport): GroupReport[] {
 
 export interface Due { categoryId: string; name: string; icon: string; logo?: string; day: number; amount: number; paid: boolean; color: string }
 
-/** Charges fixes du mois avec leur jour d'échéance (payées si la dépense du mois couvre le montant). */
+/** Échéances et dépenses planifiées du mois, jour par jour (charges fixes + enveloppes à rythme). */
 export function monthDues(state: State, r: MonthReport): Due[] {
   const color = new Map((state.groups ?? []).map((g) => [g.id, g.color]));
-  return state.categories
-    .filter((c) => c.dueDay && c.budget > 0 && !c.hidden)
-    .map((c) => {
-      const rep = r.categories.find((x) => x.id === c.id);
-      return {
-        categoryId: c.id, name: c.name, icon: c.icon, logo: c.logo, amount: c.budget,
-        day: Math.min(c.dueDay!, r.daysInMonth), paid: (rep?.spent ?? 0) >= c.budget, color: color.get(c.group ?? '') ?? '#A3A9B3',
-      };
-    })
-    .sort((a, b) => a.day - b.day);
+  const out: Due[] = [];
+  for (const c of state.categories) {
+    if (c.hidden || c.budget <= 0) continue;
+    const occ = occurrences(c, r.month);
+    const monthly = planOf(c)?.freq === 'monthly';
+    const rep = r.categories.find((x) => x.id === c.id);
+    for (const o of occ) {
+      const dayKey = `${r.month}-${pad(o.day)}`;
+      const spentDay = state.txs.filter((t) => t.type === 'expense' && t.categoryId === c.id && t.date === dayKey).reduce((a, t) => a + t.amount, 0);
+      out.push({
+        categoryId: c.id, name: c.name, icon: c.icon, logo: c.logo, amount: o.amount, day: o.day,
+        paid: monthly ? (rep?.spent ?? 0) >= c.budget : spentDay >= o.amount,
+        color: color.get(c.group ?? '') ?? '#A3A9B3',
+      });
+    }
+  }
+  return out.sort((a, b) => a.day - b.day);
 }
 
 export const goalSaved = (g: Goal) => g.contributions.reduce((a, c) => a + c.amount, 0);
@@ -622,4 +653,72 @@ export function goalMonthly(g: Goal, month: string) {
 /** Trajectoire d'épargne : cumul prévu mois par mois au rythme de l'épargne planifiée. */
 export function savingsTrajectory(start: number, monthly: number, fromMonth: string, months = 12) {
   return Array.from({ length: months + 1 }, (_, i) => ({ month: shiftMonth(fromMonth, i), value: start + monthly * i }));
+}
+
+// ---------------------------------------------------------------------
+// Rythme des enveloppes : un budget mensuel réparti sur des jours précis
+// ---------------------------------------------------------------------
+export const WEEKDAYS_FR = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+
+/** Rythme effectif d'une catégorie (une charge avec jour d'échéance = mensuel ce jour-là). */
+export function planOf(c: Category): Plan | null {
+  if (c.plan) return c.plan;
+  if (c.dueDay) return { freq: 'monthly', remind: c.kind === 'obligatory' };
+  return null;
+}
+
+/** Jours du mois où cette enveloppe est prévue, avec le montant affecté à chacun. */
+export function occurrences(c: Category, month: string): { day: number; amount: number }[] {
+  const p = planOf(c);
+  if (!p || c.budget <= 0) return [];
+  const dim = daysIn(month);
+  const [y, m] = month.split('-').map(Number);
+  let days: number[] = [];
+  if (p.freq === 'monthly') days = c.dueDay ? [Math.min(c.dueDay, dim)] : [];
+  else if (p.freq === 'daily') days = Array.from({ length: dim }, (_, i) => i + 1);
+  else if (p.freq === 'weekly') {
+    const wd = p.weekdays?.length ? p.weekdays : [1];
+    days = Array.from({ length: dim }, (_, i) => i + 1).filter((d) => wd.includes(new Date(y, m - 1, d).getDay()));
+  } else if (p.freq === 'dates') days = [...new Set((p.dates ?? []).map((d) => Math.min(d, dim)))].sort((a, b) => a - b);
+  if (!days.length) return [];
+  // Répartition au franc près : le dernier jour absorbe l'arrondi.
+  const base = Math.floor(c.budget / days.length / 50) * 50;
+  return days.map((day, i) => ({ day, amount: i === days.length - 1 ? c.budget - base * (days.length - 1) : base }));
+}
+
+export interface PeriodView { label: string; allotted: number; spent: number; remaining: number }
+
+/** Situation de la période en cours (jour ou semaine) pour une enveloppe à rythme quotidien / hebdomadaire. */
+export function periodView(state: State, c: Category, today: Date): PeriodView | null {
+  const p = planOf(c);
+  if (!p || (p.freq !== 'daily' && p.freq !== 'weekly')) return null;
+  const month = monthKey(today);
+  const occ = occurrences(c, month);
+  const d = today.getDate();
+  let from = d, to = d;
+  if (p.freq === 'weekly') {
+    const back = (today.getDay() + 6) % 7; // lundi = début de semaine
+    from = Math.max(1, d - back);
+    to = Math.min(daysIn(month), d + (6 - back));
+  }
+  const allotted = occ.filter((o) => o.day >= from && o.day <= to).reduce((a, o) => a + o.amount, 0);
+  const inRange = (t: Tx) => t.type === 'expense' && t.categoryId === c.id && t.date >= `${month}-${pad(from)}` && t.date <= `${month}-${pad(to)}`;
+  const spent = state.txs.filter(inRange).reduce((a, t) => a + t.amount, 0);
+  return { label: p.freq === 'daily' ? 'aujourd’hui' : 'cette semaine', allotted, spent, remaining: allotted - spent };
+}
+
+export interface Todo { categoryId: string; name: string; icon: string; logo?: string; amount: number; kind: CategoryKind; done: number }
+
+/** Ce qui est prévu aujourd'hui (charges à payer, enveloppes du jour), avec ce qui est déjà noté. */
+export function todayTodos(state: State, today: Date): Todo[] {
+  const month = monthKey(today);
+  const iso = toISODate(today);
+  return state.categories
+    .filter((c) => !c.hidden)
+    .flatMap((c) => {
+      const o = occurrences(c, month).find((x) => x.day === today.getDate());
+      if (!o) return [];
+      const done = state.txs.filter((t) => t.type === 'expense' && t.categoryId === c.id && t.date === iso).reduce((a, t) => a + t.amount, 0);
+      return [{ categoryId: c.id, name: c.name, icon: c.icon, logo: c.logo, amount: o.amount, kind: c.kind, done }];
+    });
 }

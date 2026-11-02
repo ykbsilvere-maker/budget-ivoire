@@ -77,7 +77,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.1.${{ github.run_number }}"
+          TAG="v$(node -p "require('./package.json').version")-${{ github.run_number }}"
           gh release create "$TAG" budget-ivoire.apk \
             --title "Budget Ivoire $TAG" \
             --notes "APK Android de Budget Ivoire (version de test, installable directement). Compilé automatiquement depuis le commit ${{ github.sha }}." \

@@ -58,16 +58,16 @@ function GoalCard({ g, month, onEdit, onContribute }: { g: Goal; month: string; 
           <div className="text-[15px] font-semibold opacity-95">{g.name}</div>
           <button onClick={onEdit} className="grid h-8 w-8 place-items-center rounded-full bg-white/20" aria-label="Modifier"><LuPencil size={14} /></button>
         </div>
-        <div className="num mt-1 text-[34px] font-extrabold leading-none">{fmt(g.target)} F</div>
+        <div className="num mt-1 text-[34px] font-extrabold leading-none">{fmt(g.target)} XOF</div>
         <div className="text-[12.5px] opacity-85">à atteindre d’ici {monthLong(g.deadline)}</div>
         <div className="num mt-8 text-center text-[44px] font-extrabold leading-none">{pct}%</div>
         <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white/25"><div className="h-full rounded-full bg-white" style={{ width: `${pct}%` }} /></div>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-2xl bg-black/20 p-2.5 text-center backdrop-blur-sm"><div className="text-[10.5px] font-semibold uppercase tracking-wide opacity-80">Épargné</div><div className="num text-[17px] font-extrabold">{fmt(saved)} F</div></div>
-          <div className="rounded-2xl bg-black/20 p-2.5 text-center backdrop-blur-sm"><div className="text-[10.5px] font-semibold uppercase tracking-wide opacity-80">Restant</div><div className="num text-[17px] font-extrabold">{fmt(left)} F</div></div>
+          <div className="rounded-2xl bg-black/20 p-2.5 text-center backdrop-blur-sm"><div className="text-[10.5px] font-semibold uppercase tracking-wide opacity-80">Épargné</div><div className="num text-[17px] font-extrabold">{fmt(saved)} XOF</div></div>
+          <div className="rounded-2xl bg-black/20 p-2.5 text-center backdrop-blur-sm"><div className="text-[10.5px] font-semibold uppercase tracking-wide opacity-80">Restant</div><div className="num text-[17px] font-extrabold">{fmt(left)} XOF</div></div>
         </div>
         <div className="mt-3 text-center text-[12.5px] opacity-90">
-          {left === 0 ? 'Objectif atteint, bravo ! 🎉' : late ? 'Date dépassée : choisis une nouvelle échéance.' : <>≈ <b>{fmt(monthly)} F</b> par mois pour y arriver</>}
+          {left === 0 ? 'Objectif atteint, bravo ! 🎉' : late ? 'Date dépassée : choisis une nouvelle échéance.' : <>≈ <b>{fmt(monthly)} XOF</b> par mois pour y arriver</>}
         </div>
         {left > 0 && (
           <button onClick={onContribute} className="mx-auto mt-3 flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[14px] font-bold text-[#172B23]">
@@ -94,12 +94,12 @@ function Debts({ debts, onNew, onEdit, onPay }: { debts: Debt[]; onNew: () => vo
             <button onClick={() => onEdit(d.id)} className="w-full text-left">
               <div className="flex items-baseline justify-between">
                 <span className="text-[14px] font-semibold">{d.name}</span>
-                <span className="num text-[13px]"><b>{fmt(d.total - d.paid)} F</b><span className="text-muted"> restants</span></span>
+                <span className="num text-[13px]"><b>{fmt(d.total - d.paid)} XOF</b><span className="text-muted"> restants</span></span>
               </div>
               <div className="mt-1.5"><Bar pct={pct} color="var(--s-primary)" h={5} /></div>
               <div className="mt-1 flex justify-between text-[11.5px] text-muted">
                 <span>{pct} % {d.direction === 'owe' ? 'remboursé' : 'récupéré'}</span>
-                <span>{d.monthly ? `${fmt(d.monthly)} F / mois${d.dueDay ? ` · le ${d.dueDay}` : ''}` : ''}</span>
+                <span>{d.monthly ? `${fmt(d.monthly)} XOF / mois${d.dueDay ? ` · le ${d.dueDay}` : ''}` : ''}</span>
               </div>
             </button>
             {d.paid < d.total && (
@@ -135,8 +135,8 @@ function Trajectory({ state, r }: { state: State; r: MonthReport }) {
     <>
       <section className="card p-4">
         <div className="text-[12px] text-muted">Dans 12 mois, au rythme prévu</div>
-        <div className="num text-[28px] font-extrabold text-primary">{fmt(pts[12].value)} F</div>
-        <div className="text-[12px] text-muted">mis de côté ({fmt(monthly)} F / mois, en partant de {fmt(start)} F)</div>
+        <div className="num text-[28px] font-extrabold text-primary">{fmt(pts[12].value)} XOF</div>
+        <div className="text-[12px] text-muted">mis de côté ({fmt(monthly)} XOF / mois, en partant de {fmt(start)} XOF)</div>
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="mt-3">
           <path d={area} fill="var(--s-primary)" opacity={0.12} />
           <path d={d} fill="none" stroke="var(--s-primary)" strokeWidth={2.5} strokeLinecap="round" />
@@ -165,7 +165,7 @@ function Trajectory({ state, r }: { state: State; r: MonthReport }) {
             <div key={g.id} className="flex items-center justify-between border-t border-line px-1 py-2.5 text-[13px] first-of-type:border-0">
               <span className="font-semibold">{g.name}</span>
               <span className={cx('text-right text-[12px]', ok ? 'text-ok' : 'text-[#B7791F]')}>
-                {left === 0 ? 'Atteint ✓' : ok ? `À l’heure (${fmt(per)} F/mois)` : `Prévois ${fmt(per)} F/mois`}
+                {left === 0 ? 'Atteint ✓' : ok ? `À l’heure (${fmt(per)} XOF/mois)` : `Prévois ${fmt(per)} XOF/mois`}
               </span>
             </div>
           );

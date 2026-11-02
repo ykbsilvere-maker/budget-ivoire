@@ -184,3 +184,28 @@ test('groupes, échéances et objectifs', async () => {
   assert.equal(goalMonthly(goal, '2026-10'), 17000); // 100 000 F restants sur 6 mois, arrondi aux 500 F
   assert.equal(savingsTrajectory(10000, 5000, '2026-10', 2).at(-1)!.value, 20000);
 });
+
+test('rythme : budget mensuel réparti par semaine, par jour ou à dates précises', async () => {
+  const { occurrences, periodView, todayTodos } = await import('./engine');
+  const base = blank().categories.find((c) => c.id === 'c_transport')!;
+  // Novembre 2026 : lundis = 2, 9, 16, 23, 30 ; mercredis = 4, 11, 18, 25
+  const weekly = { ...base, budget: 100000, plan: { freq: 'weekly' as const, weekdays: [1, 3] } };
+  const occ = occurrences(weekly, '2026-11');
+  assert.deepEqual(occ.map((o) => o.day), [2, 4, 9, 11, 16, 18, 23, 25, 30]);
+  assert.equal(occ.reduce((a, o) => a + o.amount, 0), 100000);
+  const daily = occurrences({ ...base, budget: 30000, plan: { freq: 'daily' } }, '2026-11');
+  assert.equal(daily.length, 30);
+  assert.equal(daily.reduce((a, o) => a + o.amount, 0), 30000);
+  const dates = occurrences({ ...base, budget: 60000, plan: { freq: 'dates', dates: [5, 20, 31] } }, '2026-11');
+  assert.deepEqual(dates.map((o) => [o.day, o.amount]), [[5, 20000], [20, 20000], [30, 20000]]);
+  // Semaine en cours (mercredi 11 novembre : semaine du lundi 9 au dimanche 15)
+  const s = blank();
+  s.categories = s.categories.map((c) => (c.id === 'c_transport' ? weekly : c));
+  s.txs.push(tx({ amount: 7000, categoryId: 'c_transport', walletId: 'w_cash', date: '2026-11-10' }));
+  s.txs.push(tx({ amount: 9000, categoryId: 'c_transport', walletId: 'w_cash', date: '2026-11-03' })); // semaine précédente
+  const pv = periodView(s, weekly, new Date(2026, 10, 11))!;
+  assert.equal(pv.allotted, occ.filter((o) => o.day >= 9 && o.day <= 15).reduce((a, o) => a + o.amount, 0));
+  assert.equal(pv.spent, 7000);
+  const todo = todayTodos(s, new Date(2026, 10, 11));
+  assert.ok(todo.some((t) => t.categoryId === 'c_transport'));
+});

@@ -1,7 +1,7 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import { LuChevronDown, LuPlus, LuSettings2, LuSparkles, LuCircleCheck, LuTriangleAlert, LuFlaskConical } from 'react-icons/lu';
 import type { MonthReport, State } from '../engine';
-import { fmt, fmtK, groupReports, shiftMonth } from '../engine';
+import { fmt, fmtK, groupReports, monthKey, periodView, shiftMonth, todayTodos } from '../engine';
 import { Bar, HEALTH, Money, STATUS_COLOR, Segmented, cx } from '../ui';
 import { Glyph } from '../icons';
 import { AllocRing } from '../sheets/Welcome';
@@ -12,11 +12,13 @@ const monthShort = (m: string) => {
 };
 
 export function BudgetScreen({
-  state, r, month, setMonth, onRebalance, onCategory, onNewCategory, onGroups, onSimulate,
+  state, r, month, setMonth, onRebalance, onCategory, onNewCategory, onGroups, onSimulate, onLog, today,
 }: {
   state: State; r: MonthReport; month: string; setMonth: (m: string) => void; onRebalance: () => void;
   onCategory: (id: string) => void; onNewCategory: () => void; onGroups: () => void; onSimulate: () => void;
+  onLog: (categoryId: string, amount: number) => void; today: Date;
 }) {
+  const todos = useMemo(() => (month === monthKey(today) ? todayTodos(state, today) : []), [state, month, today]);
   const groups = useMemo(() => groupReports(state, r), [state, r]);
   const [open, setOpen] = useState<string | null>(null);
   const [mode, setMode] = useState<'plan' | 'real'>('plan');
@@ -38,13 +40,13 @@ export function BudgetScreen({
 
       {/* Anneau : ce qui est dépensé par groupe, ce qui reste */}
       <section className="card flex items-center gap-4 p-4">
-        <AllocRing income={base} segments={spentSegs} big={fmtK(r.resteAVivre) + ' F'} small="reste à vivre" size={142} stroke={14} />
+        <AllocRing income={base} segments={spentSegs} big={fmtK(r.resteAVivre) + ' XOF'} small="reste à vivre" size={142} stroke={14} />
         <div className="min-w-0 flex-1 space-y-2.5">
           <Stat label="Dépensé" value={r.spent} pct={(r.spent / base) * 100} />
           <Stat label="Épargné" value={savings} pct={(savings / base) * 100} />
           <div>
             <div className="text-[11.5px] text-muted">Par jour, jusqu’à la fin du mois</div>
-            <div className="num text-[16px] font-extrabold">≈ {fmt(r.dailyAllowance)} F</div>
+            <div className="num text-[16px] font-extrabold">≈ {fmt(r.dailyAllowance)} XOF</div>
           </div>
         </div>
       </section>
@@ -54,7 +56,7 @@ export function BudgetScreen({
         <button onClick={onRebalance} className="card flex items-center gap-2.5 px-3 py-2.5 text-left">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-surface2 text-primary"><LuSparkles size={17} /></span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-bold">{over.length === 1 ? `${over[0].name} a besoin de ${fmt(overTotal)} F` : `${over.length} enveloppes ont besoin de ${fmt(overTotal)} F`}</span>
+            <span className="block truncate text-[13px] font-bold">{over.length === 1 ? `${over[0].name} a besoin de ${fmt(overTotal)} XOF` : `${over.length} enveloppes ont besoin de ${fmt(overTotal)} XOF`}</span>
             <span className="block truncate text-[11.5px] text-muted">Je t’aide à équilibrer, tes obligations restent protégées</span>
           </span>
           <span className="rounded-xl bg-primary px-2.5 py-1.5 text-xs font-bold text-onprimary">Ajuster</span>
@@ -73,6 +75,27 @@ export function BudgetScreen({
         </div>
       )}
 
+      {/* Prévu aujourd'hui */}
+      {todos.length > 0 && (
+        <section className="card p-3">
+          <h3 className="px-1 pb-1 text-[14px] font-bold">Prévu aujourd’hui</h3>
+          {todos.map((t) => (
+            <div key={t.categoryId} className="flex items-center gap-3 border-t border-line px-1 py-2 first-of-type:border-0">
+              <Glyph icon={t.icon} logo={t.logo} label={t.name} size={34} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13.5px] font-semibold">{t.name}</span>
+                <span className="block text-[11.5px] text-muted">
+                  {t.kind === 'obligatory' ? 'À payer' : 'Budget du jour'} : {fmt(t.amount)} XOF{t.done > 0 ? ` · déjà noté ${fmt(t.done)} XOF` : ''}
+                </span>
+              </span>
+              {t.done >= t.amount
+                ? <span className="text-[12px] font-bold text-ok">✓ Fait</span>
+                : <button onClick={() => onLog(t.categoryId, t.kind === 'obligatory' ? t.amount - t.done : 0)} className="rounded-xl bg-primary px-3 py-1.5 text-[12px] font-bold text-onprimary">Noter</button>}
+            </div>
+          ))}
+        </section>
+      )}
+
       {/* Groupes */}
       <section className="card overflow-hidden">
         {groups.length === 0 && <p className="p-4 text-center text-[13px] text-muted">Aucun budget pour l’instant. Ajoute une catégorie pour commencer.</p>}
@@ -88,7 +111,7 @@ export function BudgetScreen({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-[14.5px] font-bold">{g.name}</span>
-                    <span className="num shrink-0 text-[13px]"><b className={cx(g.spent > g.budget && g.budget > 0 && 'text-danger')}>{fmt(g.spent)}</b><span className="text-muted"> / {fmt(g.budget)} F</span></span>
+                    <span className="num shrink-0 text-[13px]"><b className={cx(g.spent > g.budget && g.budget > 0 && 'text-danger')}>{fmt(g.spent)}</b><span className="text-muted"> / {fmt(g.budget)} XOF</span></span>
                   </span>
                   <span className="mt-1.5 block"><Bar pct={pct} color={pct > 100 ? '#D64545' : g.color} h={5} /></span>
                 </span>
@@ -104,6 +127,15 @@ export function BudgetScreen({
                         <span className="num text-[12px] text-muted"><b className="text-ink">{fmt(c.spent)}</b> / {fmt(c.budget)}</span>
                       </div>
                       <Bar pct={c.pct} color={c.status === 'ok' ? g.color : STATUS_COLOR[c.status]} h={4} />
+                      {(() => {
+                        const cat = state.categories.find((x) => x.id === c.id);
+                        const pv = cat && month === monthKey(today) ? periodView(state, cat, today) : null;
+                        return pv ? (
+                          <div className={cx('mt-1 text-[11.5px]', pv.remaining < 0 ? 'text-danger' : 'text-muted')}>
+                            {pv.label} : {fmt(pv.spent)} / {fmt(pv.allotted)} XOF · {pv.remaining >= 0 ? `reste ${fmt(pv.remaining)}` : `dépassé de ${fmt(-pv.remaining)}`}
+                          </div>
+                        ) : null;
+                      })()}
                     </button>
                   ))}
                 </div>
@@ -199,7 +231,7 @@ export function Sankey({ income, groups, mode, incomeLabel }: { income: number; 
         {out}
         <rect x={x0} y={incY} width={nodeW} height={incH} rx={3} fill="var(--s-primary)" />
         <text x={x0 + nodeW + 4} y={incY - 6} fontSize="10" fill="var(--s-muted)">{incomeLabel}</text>
-        <text x={x0 + nodeW + 4} y={incY + 8} fontSize="11" fontWeight="700" fill="var(--s-ink)">{fmtK(income)} F</text>
+        <text x={x0 + nodeW + 4} y={incY + 8} fontSize="11" fontWeight="700" fill="var(--s-ink)">{fmtK(income)} XOF</text>
         {groupNodes.map((g) => (
           <g key={g.id}>
             <rect x={x1} y={g.y} width={nodeW} height={Math.max(2, g.h)} rx={3} fill={g.color} />

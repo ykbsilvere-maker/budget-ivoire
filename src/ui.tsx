@@ -12,7 +12,7 @@ export const HEALTH: Record<Health, { label: string; color: string; soft: string
 };
 export const STATUS_COLOR = { ok: 'var(--s-primary)', watch: '#F2A541', over: '#D64545' } as const;
 
-export function Money({ v, className, unit = 'F', sign }: { v: number; className?: string; unit?: string; sign?: boolean }) {
+export function Money({ v, className, unit = 'XOF', sign }: { v: number; className?: string; unit?: string; sign?: boolean }) {
   return (
     <span className={cx('num whitespace-nowrap', className)}>
       {sign && v > 0 ? '+' : ''}

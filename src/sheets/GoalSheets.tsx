@@ -52,7 +52,7 @@ export function GoalSheet({ id, onClose, store }: { id: string | null; onClose: 
       }>
       <Label>Mon projet</Label>
       <input value={g.name} onChange={(e) => setG({ ...g, name: e.target.value })} placeholder="Ex : Voyage à Assinie, moto, mariage…" className={inputCls} />
-      <Label>Montant à atteindre (FCFA)</Label>
+      <Label>Montant à atteindre (XOF)</Label>
       <input inputMode="numeric" value={g.target ? fmt(g.target) : ''} onChange={(e) => setG({ ...g, target: num(e.target.value) })} placeholder="0" className={cx(inputCls, 'num text-lg font-bold')} />
       <Label>D’ici</Label>
       <input type="month" value={g.deadline} onChange={(e) => setG({ ...g, deadline: e.target.value })} className={inputCls} />
@@ -62,7 +62,7 @@ export function GoalSheet({ id, onClose, store }: { id: string | null; onClose: 
       </button>
       {g.image && <button onClick={() => setG({ ...g, image: undefined })} className="mt-1 text-[12px] font-semibold text-muted">Retirer l’image</button>}
       <input ref={ref} type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files?.[0]; if (f) { const { preview } = await compressImage(f, 900); setG((x) => x && { ...x, image: preview }); } e.target.value = ''; }} />
-      {existing && <p className="mt-3 text-[12px] text-muted">Déjà épargné : {fmt(goalSaved(g))} F.</p>}
+      {existing && <p className="mt-3 text-[12px] text-muted">Déjà épargné : {fmt(goalSaved(g))} XOF.</p>}
     </Sheet>
   );
 }
@@ -84,11 +84,11 @@ export function ContributeSheet({ id, onClose, store, onDone }: { id: string | n
       wallets: s.wallets.map((w) => (w.id === 'w_savings' ? { ...w, hidden: false } : w)),
       goals: (s.goals ?? []).map((g) => (g.id === goal.id ? { ...g, contributions: [...g.contributions, { date, amount, walletId: from }] } : g)),
     }));
-    onDone(`${fmt(amount)} F mis de côté pour « ${goal.name} »`);
+    onDone(`${fmt(amount)} XOF mis de côté pour « ${goal.name} »`);
   };
   return (
-    <Sheet open onClose={onClose} title={`Pour « ${goal.name} »`} footer={<div className="pb-1"><Btn className="w-full" onClick={save} disabled={amount <= 0}><LuCheck /> Mettre de côté {amount ? fmt(amount) + ' F' : ''}</Btn></div>}>
-      <div className="num py-2 text-center text-[40px] font-extrabold">{fmt(amount)} F</div>
+    <Sheet open onClose={onClose} title={`Pour « ${goal.name} »`} footer={<div className="pb-1"><Btn className="w-full" onClick={save} disabled={amount <= 0}><LuCheck /> Mettre de côté {amount ? fmt(amount) + ' XOF' : ''}</Btn></div>}>
+      <div className="num py-2 text-center text-[40px] font-extrabold">{fmt(amount)} XOF</div>
       <Keypad value={amount} onChange={setAmount} />
       <Label>Depuis</Label>
       <WalletChoice store={store} value={from} onChange={setFrom} />
@@ -163,8 +163,8 @@ export function PayDebtSheet({ id, onClose, store, onDone }: { id: string | null
     onDone(debt.direction === 'owe' ? 'Remboursement enregistré' : 'Paiement reçu enregistré');
   };
   return (
-    <Sheet open onClose={onClose} title={debt.name} footer={<div className="pb-1"><Btn className="w-full" onClick={save} disabled={amount <= 0}><LuCheck /> Valider {amount ? fmt(amount) + ' F' : ''}</Btn></div>}>
-      <div className="num py-2 text-center text-[40px] font-extrabold">{fmt(amount)} F</div>
+    <Sheet open onClose={onClose} title={debt.name} footer={<div className="pb-1"><Btn className="w-full" onClick={save} disabled={amount <= 0}><LuCheck /> Valider {amount ? fmt(amount) + ' XOF' : ''}</Btn></div>}>
+      <div className="num py-2 text-center text-[40px] font-extrabold">{fmt(amount)} XOF</div>
       <Keypad value={amount} onChange={setAmount} />
       <Label>{debt.direction === 'owe' ? 'Payé avec' : 'Reçu sur'}</Label>
       <WalletChoice store={store} value={wallet} onChange={setWallet} />

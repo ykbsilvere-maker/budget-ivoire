@@ -90,12 +90,12 @@ function Stats({ state, r, today, onCategory, onExport }: { state: State; r: Mon
       <section className="card p-4">
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-[14px] font-bold">Dépenses courantes par jour</h3>
-          <span className="text-[11px] text-muted">repère {fmtK(ref)} F/j</span>
+          <span className="text-[11px] text-muted">repère {fmtK(ref)} XOF/j</span>
         </div>
         <div className="relative flex h-28 items-end gap-[2px]">
           <div className="absolute inset-x-0 border-t border-dashed border-primary/60" style={{ bottom: `${(ref / maxDay) * 100}%` }} />
           {r.dailySpend.map((v, i) => (
-            <div key={i} className="flex-1 rounded-t-[3px]" title={`${i + 1} : ${fmt(v)} F`}
+            <div key={i} className="flex-1 rounded-t-[3px]" title={`${i + 1} : ${fmt(v)} XOF`}
               style={{ height: `${(v / maxDay) * 100}%`, minHeight: v ? 3 : 0, background: v > ref * 1.6 ? '#D64545' : v > ref ? '#F2A541' : 'var(--s-primary)', opacity: i + 1 > r.dayOfMonth ? 0.3 : 1 }} />
           ))}
         </div>
@@ -109,7 +109,7 @@ function Stats({ state, r, today, onCategory, onExport }: { state: State; r: Mon
         <Row l="Dépenses flexibles" v={flex} max={Math.max(r.incomeReceived, r.spent + r.savingsDone)} c="color-mix(in srgb, var(--s-primary) 45%, var(--s-surface2))" />
         <Row l="Épargne" v={r.savingsDone} max={Math.max(r.incomeReceived, r.spent + r.savingsDone)} c="var(--s-muted)" />
         <div className="mt-3 rounded-2xl bg-surface2 p-3 text-[12px]">
-          Mois précédent : <b className="num">{fmt(prev.spent)} F</b> dépensés
+          Mois précédent : <b className="num">{fmt(prev.spent)} XOF</b> dépensés
           {prev.spent > 0 && (
             <> · ce mois <b className={r.spent > prev.spent ? 'text-danger' : 'text-ok'}>{r.spent > prev.spent ? '+' : ''}{Math.round(((r.spent - prev.spent) / prev.spent) * 100)} %</b></>
           )}
@@ -134,8 +134,8 @@ function Stats({ state, r, today, onCategory, onExport }: { state: State; r: Mon
                 {c.status !== 'ok' && (
                   <div className={cx('mt-1 text-[11px]', c.status === 'over' ? 'text-danger' : 'text-[#B7791F]')}>
                     {c.status === 'over'
-                      ? `Dépassé de ${fmt(c.spent - c.budget)} F`
-                      : `${c.pct} % consommés. Au rythme actuel : ~${fmt(c.projected)} F en fin de mois.`}
+                      ? `Dépassé de ${fmt(c.spent - c.budget)} XOF`
+                      : `${c.pct} % consommés. Au rythme actuel : ~${fmt(c.projected)} XOF en fin de mois.`}
                   </div>
                 )}
               </button>
@@ -162,7 +162,7 @@ function Stat({ l, v, sub, delta }: { l: string; v: number; sub?: string; delta?
 function Row({ l, v, max, c }: { l: string; v: number; max: number; c: string }) {
   return (
     <div className="mb-2">
-      <div className="mb-1 flex justify-between text-[12px]"><span>{l}</span><b className="num">{fmt(v)} F</b></div>
+      <div className="mb-1 flex justify-between text-[12px]"><span>{l}</span><b className="num">{fmt(v)} XOF</b></div>
       <Bar pct={(v / Math.max(1, max)) * 100} color={c} h={8} />
     </div>
   );
@@ -265,14 +265,14 @@ function Simulator({ state, r, today, onApply }: { state: State; r: MonthReport;
             <div key={c.id} className="flex justify-between py-0.5">
               <span>{c.name}</span>
               <span className={cx('num', c.status === 'over' ? 'text-danger' : c.status === 'watch' ? 'text-[#B7791F]' : 'text-ok')}>
-                reste {fmt(c.remaining)} F
+                reste {fmt(c.remaining)} XOF
               </span>
             </div>
           ))}
           {changedWallets.map((w) => (
             <div key={w.id} className="flex justify-between py-0.5">
               <span>{w.name}</span>
-              <span className="num">{fmt(r.wallets.find((x) => x.id === w.id)!.balance)} → <b>{fmt(w.balance)}</b> F</span>
+              <span className="num">{fmt(r.wallets.find((x) => x.id === w.id)!.balance)} → <b>{fmt(w.balance)}</b> XOF</span>
             </div>
           ))}
         </section>

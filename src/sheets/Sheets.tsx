@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LuCheck, LuDownload, LuLock, LuMoon, LuPalette, LuSparkles, LuSun, LuTrash2, LuUpload, LuShieldCheck, LuDatabase } from 'react-icons/lu';
-import type { Category, CategoryKind, MonthReport, State, Tx, Wallet } from '../engine';
-import { applyRebalance, fmt, proposeRebalance, toCSV, walletReports, toISODate, type RebalanceProposal } from '../engine';
+import type { Category, CategoryKind, MonthReport, Plan, State, Tx, Wallet } from '../engine';
+import { WEEKDAYS_FR, applyRebalance, fmt, monthKey, occurrences, proposeRebalance, toCSV, walletReports, toISODate, type RebalanceProposal } from '../engine';
+import { buildICS, describePlan, googleCalendarUrl, remindersOf, applyNativeReminders, notificationPermission } from '../services/reminders';
+import { isNative, openExternal } from '../services/native';
 import type { Store, ThemeId, UiPrefs } from '../store';
 import { download, uid } from '../store';
 import { Btn, Label, Money, Segmented, Sheet, cx, inputCls } from '../ui';
 import { APP } from '../config';
 import { CARD_COLORS } from '../screens/Money';
 import { Glyph, ICON_SECTIONS, fileToLogo } from '../icons';
-import { LuImagePlus } from 'react-icons/lu';
+import { LuImagePlus, LuCalendarPlus, LuBell } from 'react-icons/lu';
 
 // ---------------------------------------------------------------------
 // Modifier / supprimer une opération (avec traçabilité)
@@ -38,7 +40,7 @@ export function EditTxSheet({ tx, onClose, store }: { tx: Tx | null; onClose: ()
           <Btn onClick={save}><LuCheck /> Enregistrer</Btn>
         </div>
       }>
-      <Label>Montant (FCFA)</Label>
+      <Label>Montant (XOF)</Label>
       <input inputMode="numeric" value={d.amount} onChange={(e) => setD({ ...d, amount: Number(e.target.value.replace(/\D/g, '')) || 0 })} className={cx(inputCls, 'num text-xl font-bold')} />
       {tx.type !== 'transfer' ? (
         <>
@@ -74,7 +76,7 @@ export function EditTxSheet({ tx, onClose, store }: { tx: Tx | null; onClose: ()
             {tx.history.map((h, i) => (
               <li key={i} className="rounded-xl bg-surface2 px-3 py-2">
                 {new Date(h.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })} — avant :{' '}
-                {Object.entries(h.before).map(([k, v]) => `${k} = ${k === 'amount' ? fmt(Number(v)) + ' F' : v ?? '—'}`).join(', ')}
+                {Object.entries(h.before).map(([k, v]) => `${k} = ${k === 'amount' ? fmt(Number(v)) + ' XOF' : v ?? '—'}`).join(', ')}
               </li>
             ))}
           </ul>
@@ -134,7 +136,7 @@ export function RebalanceSheet({ open, onClose, store, r, onDone }: { open: bool
           <div className="rounded-2xl bg-surface2 p-3 text-[13px] leading-snug">
             {base.covers.map((c) => {
               const cat = r.categories.find((x) => x.id === c.id)!;
-              return <div key={c.id}><b>{cat.name}</b> a besoin de <b>{fmt(c.to - c.from)} F</b> de plus que prévu.</div>;
+              return <div key={c.id}><b>{cat.name}</b> a besoin de <b>{fmt(c.to - c.from)} XOF</b> de plus que prévu.</div>;
             })}
             <div className="mt-1">Bonne nouvelle : on peut le compenser sans toucher à tes obligations. Voici ma proposition, ajuste-la si tu veux :</div>
           </div>
@@ -152,7 +154,7 @@ export function RebalanceSheet({ open, onClose, store, r, onDone }: { open: bool
                     <input type="range" min={0} max={c.margin} step={500} value={v} onChange={(e) => setCuts({ ...cuts, [c.id]: Number(e.target.value) })} className="flex-1" />
                     <span className="num w-20 text-right text-[13px] font-bold">−{fmt(v)}</span>
                   </div>
-                  <div className="text-[10.5px] text-muted">Marge réelle : {fmt(c.margin)} F (déjà dépensé : {fmt(c.spent)} F)</div>
+                  <div className="text-[10.5px] text-muted">Marge réelle : {fmt(c.margin)} XOF (déjà dépensé : {fmt(c.spent)} XOF)</div>
                 </div>
               );
             })}
@@ -213,22 +215,13 @@ export function CategorySheet({ id, onClose, store }: { id: string | null; onClo
       }>
       <Label>Nom</Label>
       <input value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} className={inputCls} placeholder="Ex : Cotisation association" />
-      <IconField icon={c.icon} logo={c.logo} name={c.name} onIcon={(icon) => setC({ ...c, icon, logo: undefined })} onLogo={(logo) => setC({ ...c, logo })} />
-      <Label>Plafond mensuel (FCFA)</Label>
+      <Label>Budget du mois (XOF)</Label>
       <input inputMode="numeric" value={c.budget} onChange={(e) => setC({ ...c, budget: Number(e.target.value.replace(/\D/g, '')) || 0 })} className={cx(inputCls, 'num text-lg font-bold')} />
-      <div className="grid grid-cols-[1fr_96px] gap-2">
-        <div>
-          <Label>Groupe</Label>
-          <select value={c.group ?? 'g_other'} onChange={(e) => setC({ ...c, group: e.target.value })} className={inputCls}>
-            {(store.state.groups ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <Label>Jour</Label>
-          <input inputMode="numeric" value={c.dueDay ?? ''} placeholder="—" onChange={(e) => setC({ ...c, dueDay: Math.min(31, Number(e.target.value.replace(/\D/g, ''))) || undefined })} className={cx(inputCls, 'text-center')} aria-label="Jour du mois de l’échéance" />
-        </div>
-      </div>
-      <p className="mt-1 text-[11px] text-muted">Le jour (facultatif) place cette charge dans le calendrier : loyer le 5, CIE le 15…</p>
+      <Label>Groupe</Label>
+      <select value={c.group ?? 'g_other'} onChange={(e) => setC({ ...c, group: e.target.value })} className={inputCls}>
+        {(store.state.groups ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+      </select>
+      <RhythmEditor c={c} setC={setC} store={store} />
       <Label>Type de dépense</Label>
       <div className="space-y-1.5">
         {KINDS.map((k) => (
@@ -244,6 +237,7 @@ export function CategorySheet({ id, onClose, store }: { id: string | null; onClo
           <input type="range" min={0} max={50} step={5} value={Math.round((c.maxCut ?? 0.2) * 100)} onChange={(e) => setC({ ...c, maxCut: Number(e.target.value) / 100 })} className="w-full" />
         </>
       )}
+      <IconField icon={c.icon} logo={c.logo} name={c.name} onIcon={(icon) => setC({ ...c, icon, logo: undefined })} onLogo={(logo) => setC({ ...c, logo })} />
       {existing && used && <p className="mt-3 text-[11.5px] text-muted">Cette catégorie a un historique : elle peut être masquée mais pas supprimée, pour ne pas casser tes anciennes opérations.</p>}
     </Sheet>
   );
@@ -277,9 +271,9 @@ export function WalletSheet({ id, onClose, store }: { id: string | null; onClose
       <Label>Nom</Label>
       <input value={w.name} onChange={(e) => setW({ ...w, name: e.target.value })} className={inputCls} placeholder="Ex : Djamo, Tontine…" />
       <IconField icon={w.icon} logo={w.logo} name={w.name} onIcon={(icon) => setW({ ...w, icon, logo: undefined })} onLogo={(logo) => setW({ ...w, logo })} allowInitials />
-      <Label>Solde réel actuel (FCFA)</Label>
+      <Label>Solde réel actuel (XOF)</Label>
       <input inputMode="numeric" value={declared} onChange={(e) => setDeclared(e.target.value)} className={cx(inputCls, 'num text-lg font-bold')} />
-      {existing && <p className="mt-1 text-[11.5px] text-muted">Solde calculé par l’application : {fmt(current)} F. Saisis le montant que tu vois vraiment sur ton téléphone ou dans ta poche.</p>}
+      {existing && <p className="mt-1 text-[11.5px] text-muted">Solde calculé par l’application : {fmt(current)} XOF. Saisis le montant que tu vois vraiment sur ton téléphone ou dans ta poche.</p>}
       <Label>Couleur de la carte</Label>
       <div className="flex gap-2">
         {CARD_COLORS.map((col) => (
@@ -362,7 +356,7 @@ export function SettingsSheet({
         {ui.theme === 'nuit' && <p className="mt-1 text-[11px] text-muted">Le modèle Nuit dorée est toujours sombre.</p>}
       </div>
 
-      <Label>Revenu mensuel prévu (FCFA)</Label>
+      <Label>Revenu mensuel prévu (XOF)</Label>
       <input inputMode="numeric" value={state.settings.expectedIncome} onChange={(e) => store.setSettings({ expectedIncome: Number(e.target.value.replace(/\D/g, '')) || 0 })} className={cx(inputCls, 'num font-bold')} />
 
       <Label>Seuil d’alerte par enveloppe : {state.settings.warnPct} %</Label>
@@ -375,6 +369,8 @@ export function SettingsSheet({
       <input value={presets} onChange={(e) => setPresets(e.target.value)}
         onBlur={() => { const p = presets.split(/[,;]/).map((x) => Number(x.replace(/\D/g, ''))).filter((x) => x > 0).slice(0, 8); if (p.length) store.setSettings({ presets: p }); }}
         className={inputCls} />
+
+      <RemindersSettings store={store} onToast={onToast} />
 
       <Label><span className="inline-flex items-center gap-1"><LuDatabase /> Mes données</span></Label>
       <div className="rounded-2xl bg-surface2 p-3 text-[12.5px]">
@@ -436,6 +432,117 @@ function IconField({
           </div>
         </div>
       ))}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Rythme de dépense d'une enveloppe + rappels
+// ---------------------------------------------------------------------
+function RhythmEditor({ c, setC, store }: { c: Category; setC: (c: Category) => void; store: Store }) {
+  const plan: Plan = c.plan ?? { freq: c.dueDay ? 'monthly' : 'monthly', remind: c.kind === 'obligatory' };
+  const set = (p: Partial<Plan>) => setC({ ...c, plan: { ...plan, ...p } });
+  const month = monthKey(new Date());
+  const occ = occurrences({ ...c, plan }, month);
+  const per = occ.length ? Math.round(c.budget / occ.length) : 0;
+  const url = googleCalendarUrl(store.state, { ...c, plan });
+  const toggle = (arr: number[] | undefined, v: number) => { const a = arr ?? []; return a.includes(v) ? a.filter((x) => x !== v) : [...a, v]; };
+  return (
+    <>
+      <Label>Rythme de dépense</Label>
+      <Segmented small value={plan.freq} onChange={(f) => set({ freq: f, weekdays: f === 'weekly' && !plan.weekdays?.length ? [1] : plan.weekdays })}
+        options={[{ value: 'monthly', label: 'Mois' }, { value: 'weekly', label: 'Semaine' }, { value: 'daily', label: 'Jour' }, { value: 'dates', label: 'Dates' }]} />
+      {plan.freq === 'monthly' && (
+        <div className="mt-2 flex items-center gap-2 text-[13px]">
+          <span className="text-muted">Le</span>
+          <input inputMode="numeric" value={c.dueDay ?? ''} placeholder="—" onChange={(e) => setC({ ...c, plan, dueDay: Math.min(31, Number(e.target.value.replace(/\D/g, ''))) || undefined })}
+            className={cx(inputCls, 'w-20 py-2 text-center')} aria-label="Jour du mois" />
+          <span className="text-muted">de chaque mois (facultatif)</span>
+        </div>
+      )}
+      {plan.freq === 'weekly' && (
+        <div className="mt-2 grid grid-cols-7 gap-1">
+          {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+            const on = (plan.weekdays ?? []).includes(d);
+            return (
+              <button key={d} onClick={() => set({ weekdays: toggle(plan.weekdays, d) })}
+                className={cx('rounded-xl py-2 text-[12.5px] font-semibold', on ? 'bg-primary text-onprimary' : 'bg-surface2')}>{WEEKDAYS_FR[d]}</button>
+            );
+          })}
+        </div>
+      )}
+      {plan.freq === 'dates' && (
+        <div className="mt-2 grid grid-cols-7 gap-1.5">
+          {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => {
+            const on = (plan.dates ?? []).includes(d);
+            return (
+              <button key={d} onClick={() => set({ dates: toggle(plan.dates, d) })}
+                className={cx('num mx-auto grid h-8 w-8 place-items-center rounded-full text-[12.5px] font-semibold', on ? 'bg-primary text-onprimary' : 'bg-surface2')}>{d}</button>
+            );
+          })}
+        </div>
+      )}
+      <div className="mt-2 rounded-2xl bg-surface2 p-3 text-[12.5px]">
+        {c.budget <= 0 ? 'Indique d’abord le budget du mois.' : occ.length === 0
+          ? (plan.freq === 'monthly' ? 'Budget suivi sur tout le mois (sans date précise).' : 'Choisis au moins un jour.')
+          : <><b className="num">{fmt(per)} XOF</b> par {plan.freq === 'daily' ? 'jour' : 'passage'} · {occ.length} fois ce mois-ci ({describePlan({ ...c, plan })}).</>}
+      </div>
+      <label className="mt-2 flex items-center justify-between rounded-2xl bg-surface2 px-3 py-3 text-[14px]">
+        <span>Me rappeler ces jours-là<span className="block text-[11.5px] text-muted">Notification sur le téléphone (application Android)</span></span>
+        <input type="checkbox" checked={!!plan.remind} onChange={(e) => set({ remind: e.target.checked })} className="h-5 w-5 accent-[var(--s-primary)]" />
+      </label>
+      {url && (
+        <Btn variant="ghost" className="mt-2 w-full" onClick={() => openExternal(url)}><LuCalendarPlus /> Ajouter à mon Google Agenda</Btn>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Réglages des rappels
+// ---------------------------------------------------------------------
+function RemindersSettings({ store, onToast }: { store: Store; onToast: (m: string) => void }) {
+  const r = remindersOf(store.state);
+  const set = (patch: Partial<typeof r>) => store.setSettings({ reminders: { ...r, ...patch } });
+  const [perm, setPerm] = useState<string>('…');
+  useEffect(() => { notificationPermission().then(setPerm); }, []);
+  const planned = store.state.categories.filter((c) => !c.hidden && c.budget > 0 && (c.plan?.remind || (!c.plan && c.dueDay && c.kind === 'obligatory')));
+  const enable = async () => {
+    const p = await notificationPermission(true);
+    setPerm(p);
+    if (p === 'granted') { const n = await applyNativeReminders(store.state); onToast(`${n} rappels programmés sur ce téléphone`); }
+    else onToast('Notifications refusées : autorise-les dans les réglages Android de l’application.');
+  };
+  return (
+    <>
+      <Label><span className="inline-flex items-center gap-1"><LuBell /> Rappels</span></Label>
+      <div className="card divide-y divide-line">
+        <label className="flex items-center justify-between gap-3 px-3 py-3 text-[14px]">
+          <span>Noter mes dépenses chaque jour<span className="block text-[11.5px] text-muted">Un rappel le soir</span></span>
+          <input type="time" value={r.logTime} onChange={(e) => set({ logTime: e.target.value })} className="rounded-lg bg-surface2 px-2 py-1 text-[13px]" disabled={!r.dailyLog} />
+          <input type="checkbox" checked={r.dailyLog} onChange={(e) => set({ dailyLog: e.target.checked })} className="h-5 w-5 accent-[var(--s-primary)]" />
+        </label>
+        <label className="flex items-center justify-between gap-3 px-3 py-3 text-[14px]">
+          <span>Échéances et budgets planifiés<span className="block text-[11.5px] text-muted">{planned.length} enveloppe(s) avec rappel</span></span>
+          <input type="time" value={r.dueTime} onChange={(e) => set({ dueTime: e.target.value })} className="rounded-lg bg-surface2 px-2 py-1 text-[13px]" disabled={!r.dues} />
+          <input type="checkbox" checked={r.dues} onChange={(e) => set({ dues: e.target.checked })} className="h-5 w-5 accent-[var(--s-primary)]" />
+        </label>
+        <label className="flex items-center justify-between px-3 py-3 text-[14px]">
+          <span>Prévenir la veille</span>
+          <input type="checkbox" checked={r.dayBefore} onChange={(e) => set({ dayBefore: e.target.checked })} className="h-5 w-5 accent-[var(--s-primary)]" />
+        </label>
+      </div>
+      {isNative() ? (
+        perm === 'granted'
+          ? <p className="mt-2 text-[12px] text-ok">✓ Notifications autorisées : les rappels sont programmés automatiquement.</p>
+          : <Btn className="mt-2 w-full" onClick={enable}><LuBell /> Activer les notifications</Btn>
+      ) : (
+        <p className="mt-2 text-[11.5px] text-muted">Les notifications fonctionnent dans l’application Android. Ici, utilise l’ajout au calendrier ci-dessous.</p>
+      )}
+      <Btn variant="ghost" className="mt-2 w-full" onClick={() => download('budget-ivoire-rappels.ics', buildICS(store.state), 'text/calendar')}>
+        <LuCalendarPlus /> Mettre tous mes rappels dans mon calendrier (.ics)
+      </Btn>
+      <p className="mt-1 text-[11px] text-muted">Pour Google Agenda, le plus simple : ouvre une enveloppe (onglet Budget) › « Ajouter à mon Google Agenda ».</p>
     </>
   );
 }

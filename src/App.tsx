@@ -15,6 +15,8 @@ import { AddSheet, type AddMode } from './sheets/AddSheet';
 import { Welcome } from './sheets/Welcome';
 import { AccountSheet, STATUS_LABEL, SyncIcon } from './sheets/Account';
 import { useAccount } from './services/account';
+import { applyNativeReminders } from './services/reminders';
+import { isNative } from './services/native';
 import { CategorySheet, EditTxSheet, RebalanceSheet, SettingsSheet, WalletSheet } from './sheets/Sheets';
 
 type Tab = 'money' | 'goals' | 'calendar' | 'budget' | 'analysis';
@@ -29,7 +31,7 @@ export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [month, setMonth] = useState(() => monthKey(new Date()));
 
-  const [add, setAdd] = useState<{ mode: AddMode; date?: string; scan?: boolean } | null>(null);
+  const [add, setAdd] = useState<{ mode: AddMode; date?: string; scan?: boolean; amount?: number; categoryId?: string } | null>(null);
   const [editTx, setEditTx] = useState<Tx | null>(null);
   const [catId, setCatId] = useState<string | null>(null);
   const [walletId, setWalletId] = useState<string | null>(null);
@@ -55,6 +57,13 @@ export default function App() {
   }, [toast]);
 
   const r = useMemo(() => computeMonth(store.state, month, now), [store.state, month, now]);
+
+  // Rappels du téléphone (APK) : reprogrammés après chaque changement, au calme.
+  useEffect(() => {
+    if (!isNative()) return;
+    const t = setTimeout(() => { applyNativeReminders(store.state).catch(() => {}); }, 3000);
+    return () => clearTimeout(t);
+  }, [store.state]);
   const h = HEALTH[r.health];
   const isCurrent = month === monthKey(now);
   const [y, m] = month.split('-').map(Number);
@@ -114,6 +123,8 @@ export default function App() {
               onNewCategory={() => setCatId('')}
               onGroups={() => setGroupsOpen(true)}
               onSimulate={() => { setAnaTab('sim'); go('analysis'); }}
+              onLog={(categoryId, amount) => setAdd({ mode: 'expense', categoryId, amount })}
+              today={now}
             />
           )}
           {tab === 'goals' && (
@@ -161,7 +172,7 @@ export default function App() {
         </div>
       </nav>
 
-      <AddSheet open={!!add} onClose={() => setAdd(null)} store={store} initialMode={add?.mode} initialDate={add?.date} autoScan={add?.scan} onSaved={onSaved} />
+      <AddSheet open={!!add} onClose={() => setAdd(null)} store={store} initialMode={add?.mode} initialDate={add?.date} autoScan={add?.scan} initialAmount={add?.amount} initialCategory={add?.categoryId} onSaved={onSaved} />
       <EditTxSheet tx={editTx} onClose={() => setEditTx(null)} store={store} />
       <CategorySheet id={catId} onClose={() => setCatId(null)} store={store} />
       <WalletSheet id={walletId} onClose={() => setWalletId(null)} store={store} />

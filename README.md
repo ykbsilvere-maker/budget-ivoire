@@ -36,7 +36,15 @@ Autre option sans compilation : **pwabuilder.com** à partir de l’adresse du s
 
 ---
 
-## 3. Développement
+## 3. Rythme des enveloppes, rappels et calendrier
+
+- Chaque enveloppe a un **rythme** : par mois (avec un jour, ex. loyer le 5), par **semaine** (jours au choix, ex. transport lundi et jeudi), par **jour**, ou à **dates précises** (ex. le 5 et le 20). Le budget du mois est réparti automatiquement sur ces jours.
+- L'onglet Budget affiche « **Prévu aujourd'hui** » (bouton *Noter*) et, pour les enveloppes hebdo/quotidiennes, « cette semaine : dépensé / prévu ».
+- **Notifications** (application Android) : rappel quotidien pour noter ses dépenses + rappels des échéances, à l'heure choisie, éventuellement la veille. Réglages › Rappels › *Activer les notifications*.
+- **Calendrier** : bouton « Ajouter à mon Google Agenda » dans chaque enveloppe (événement récurrent), ou fichier `.ics` avec tous les rappels (Réglages › Rappels).
+- Montants affichés en **XOF** (franc CFA UEMOA).
+
+## 4. Développement
 
 ```bash
 npm install
