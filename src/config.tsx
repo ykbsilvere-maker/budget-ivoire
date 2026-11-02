@@ -1,6 +1,11 @@
 // Identité de l'application : modifiez ces valeurs pour renommer l'app
 // ou changer le logo, sans toucher au reste du code.
+declare const __APP_VERSION__: string;
+declare const __BUILD_DATE__: string;
+
 export const APP = {
+  version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev',
+  builtAt: typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '',
   name: 'Budget Ivoire',
   tagline: 'Ton assistant budget',
   currency: 'XOF',
@@ -23,3 +28,23 @@ export function Logo({ size = 36 }: { size?: number }) {
     </svg>
   );
 }
+
+/** Nouveautés affichées dans Réglages › À propos (la plus récente en premier). */
+export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
+  { version: '1.3', date: '2 novembre 2026', items: [
+    'Numéro de version et nouveautés visibles dans les réglages',
+    'Version Android mise à jour automatiquement à chaque compilation',
+  ] },
+  { version: '1.2', date: '2 novembre 2026', items: [
+    'Montants en XOF',
+    'Rythme des enveloppes : par mois, semaine, jour ou dates précises',
+    'Rappels sur le téléphone et rappel du soir pour noter ses dépenses',
+    'Ajout au Google Agenda et fichier calendrier (.ics)',
+    'Carte « Prévu aujourd’hui » dans l’onglet Budget',
+  ] },
+  { version: '1.1', date: '2 novembre 2026', items: [
+    'Comptes et sauvegarde en ligne, reconnexion sur un autre téléphone',
+    'Plus de 100 icônes et logos personnalisés',
+    '5 onglets : Patrimoine, Objectifs, Activité, Budget, Stats',
+  ] },
+];

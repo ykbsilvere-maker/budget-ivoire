@@ -45,6 +45,12 @@ jobs:
           [ -d android ] || npx cap add android
           npx cap sync android
 
+      - name: Version Android (nom = package.json, code = numéro de compilation)
+        run: |
+          V=$(node -p "require('./package.json').version")
+          sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"$V\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle
+
       - name: Icône de l'application
         run: |
           command -v convert || (sudo apt-get update && sudo apt-get install -y imagemagick)
@@ -80,5 +86,5 @@ jobs:
           TAG="v$(node -p "require('./package.json').version")-${{ github.run_number }}"
           gh release create "$TAG" budget-ivoire.apk \
             --title "Budget Ivoire $TAG" \
-            --notes "APK Android de Budget Ivoire (version de test, installable directement). Compilé automatiquement depuis le commit ${{ github.sha }}." \
+            --notes-file CHANGELOG.md \
             --latest

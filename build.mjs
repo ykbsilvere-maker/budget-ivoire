@@ -31,7 +31,12 @@ await build({
   target: 'es2020',
   jsx: 'automatic',
   outfile: path.join(dist, 'assets/app.js'),
-  define: { 'process.env.NODE_ENV': '"production"', __API_BASE__: JSON.stringify(process.env.API_BASE || '') },
+  define: {
+    'process.env.NODE_ENV': '"production"',
+    __API_BASE__: JSON.stringify(process.env.API_BASE || ''),
+    __APP_VERSION__: JSON.stringify(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version),
+    __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+  },
   nodePaths: (process.env.NODE_PATH || '').split(path.delimiter).filter(Boolean),
   legalComments: 'none',
   logLevel: 'warning',

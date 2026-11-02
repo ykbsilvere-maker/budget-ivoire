@@ -7,7 +7,7 @@ import { isNative, openExternal } from '../services/native';
 import type { Store, ThemeId, UiPrefs } from '../store';
 import { download, uid } from '../store';
 import { Btn, Label, Money, Segmented, Sheet, cx, inputCls } from '../ui';
-import { APP } from '../config';
+import { APP, CHANGELOG } from '../config';
 import { CARD_COLORS } from '../screens/Money';
 import { Glyph, ICON_SECTIONS, fileToLogo } from '../icons';
 import { LuImagePlus, LuCalendarPlus, LuBell } from 'react-icons/lu';
@@ -393,6 +393,19 @@ export function SettingsSheet({
         </Btn>
       </div>
 
+      <Label>À propos et nouveautés</Label>
+      <div className="card p-3 text-[13px]">
+        <div className="flex items-center justify-between">
+          <b>{APP.name} {APP.version}</b>
+          <span className="text-[11.5px] text-muted">{APP.builtAt ? `compilé le ${new Date(APP.builtAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}` : 'version de développement'}</span>
+        </div>
+        {CHANGELOG.slice(0, 2).map((v) => (
+          <div key={v.version} className="mt-2">
+            <div className="text-[11.5px] font-bold uppercase tracking-wide text-muted">Version {v.version} · {v.date}</div>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">{v.items.map((it) => <li key={it}>{it}</li>)}</ul>
+          </div>
+        ))}
+      </div>
       <p className="mt-4 flex items-start gap-2 rounded-2xl bg-surface2 p-3 text-[11.5px] text-muted">
         <LuShieldCheck className="mt-0.5 shrink-0 text-primary" size={16} />
         {APP.name} ne stocke jamais de code PIN Mobile Money ni de mot de passe bancaire. Tes données restent sur ce téléphone. Les conseils sont des estimations, pas des certitudes.
