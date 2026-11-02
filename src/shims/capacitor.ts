@@ -7,6 +7,7 @@ export const LocalNotifications = {
   requestPermissions: async () => ({ display: 'denied' }),
   createChannel: notAvailable, getPending: async () => ({ notifications: [] }), cancel: notAvailable, schedule: notAvailable,
   addListener: async () => ({ remove: async () => {} }),
+  registerActionTypes: async () => {},
 };
 export const Filesystem = { writeFile: notAvailable, readFile: notAvailable, deleteFile: notAvailable };
 export const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS' };

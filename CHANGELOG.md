@@ -1,8 +1,15 @@
-## Budget Ivoire 1.5 — 2 novembre 2026
+## Budget Ivoire 1.6 — 2 novembre 2026
 
 **Installer :** ouvrez `budget-ivoire.apk` sur votre téléphone Android et autorisez « Installer des applications inconnues ». Une version déjà installée est mise à jour, vos données sont conservées.
 
-##### Nouveautés 1.5
+##### Nouveautés 1.6
+- **Prévision du jour** (onglet Budget) : le détail de ce qui est prévu aujourd'hui d'après tes rythmes (jour, semaine avec les jours choisis, dates, mois) et tes dépenses prévues — par exemple « Transport 10 000 ».
+- Pour chaque ligne : **Oui** (dépensé, montant prévu, en un geste), **Non** (rien aujourd'hui) ou **Montant** (un autre montant). Ensuite **Modifier** permet de corriger le montant dépensé.
+- **Notifications avec boutons** « ✓ Oui, dépensé », « Non », « Autre montant » : tu réponds sans chercher dans l'application.
+- **Rappel du soir** avec le détail de ce qui n'est pas encore confirmé.
+- Choisir un rythme semaine / jour / dates active automatiquement le rappel de ces jours-là.
+
+### Rappel 1.5
 - **Masquage compte par compte** : chaque compte (et le patrimoine en haut) a son œil. L'écran reste affiché, le montant est masqué ; code ou empreinte pour le voir.
 - **Onglets protégés** : ils restent visibles, seuls les montants sont masqués jusqu'au code.
 - **Approvisionner une enveloppe** depuis un compte (Wave, banque…) : l'argent reste sur le compte mais il est réservé à l'enveloppe ; solde libre avant → après.

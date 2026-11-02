@@ -17,7 +17,14 @@ test('rappels : quotidien + loyer + transport hebdo', () => {
   const titles = list.map((x) => x.title);
   assert.ok(titles.some((t) => t.startsWith('Loyer : 60 000 XOF à payer')), 'loyer le 5');
   assert.ok(titles.some((t) => t.startsWith('Transport')), 'transport');
-  assert.equal(titles.filter((t) => t === 'Tes dépenses du jour').length, 11);
+  // 11 rappels du soir : les jours avec une prévision en donnent le détail
+  assert.equal(titles.filter((t) => t === 'Tes dépenses du jour' || t.startsWith('Prévision du jour')).length, 11);
+  const mon = list.find((x) => x.title.startsWith('Prévision du jour') && x.at.getDate() === 2)!;
+  assert.match(mon.body, /Transport/);
+  // Boutons Oui / Non / Autre montant sur les rappels de dépense
+  const tr = list.find((x) => x.title.startsWith('Transport'))!;
+  assert.equal(tr.actionTypeId, 'DEPENSE_PREVUE');
+  assert.equal((tr.extra as any).key, 'c_transport@2026-11-04');
   assert.ok(list.every((x) => x.at > now));
   // le transport du lundi 2 à 8 h est déjà passé : premier rappel = mercredi 4
   const firstTransport = list.find((x) => x.title.startsWith('Transport'))!;

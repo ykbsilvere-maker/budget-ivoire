@@ -1,8 +1,8 @@
 import { type ReactNode, useMemo, useState } from 'react';
-import { LuChevronDown, LuPlus, LuSettings2, LuSparkles, LuCircleCheck, LuTriangleAlert, LuFlaskConical, LuCheck, LuWallet } from 'react-icons/lu';
+import { LuChevronDown, LuPlus, LuSettings2, LuSparkles, LuCircleCheck, LuTriangleAlert, LuFlaskConical, LuCheck, LuWallet, LuPencil } from 'react-icons/lu';
 import { EnvelopeCards, Evolution } from '../sheets/Envelope';
 import type { MonthReport, State } from '../engine';
-import { fmt, fmtK, groupReports, monthKey, pendingItems, periodView, shiftMonth, type PendingItem } from '../engine';
+import { fmt, fmtK, groupReports, monthKey, pendingItems, periodView, shiftMonth, todayForecast, type ForecastItem, type PendingItem } from '../engine';
 import { dateLabel } from '../sheets/PaySheet';
 import { Bar, HEALTH, Money, STATUS_COLOR, Segmented, cx } from '../ui';
 import { Glyph } from '../icons';
@@ -14,13 +14,15 @@ const monthShort = (m: string) => {
 };
 
 export function BudgetScreen({
-  state, r, month, setMonth, onRebalance, onCategory, onNewCategory, onGroups, onSimulate, onPay, onFund, today,
+  state, r, month, setMonth, onRebalance, onCategory, onNewCategory, onGroups, onSimulate, onPay, onFund, today, onForecast, onEditTx,
 }: {
   state: State; r: MonthReport; month: string; setMonth: (m: string) => void; onRebalance: () => void;
   onCategory: (id: string) => void; onNewCategory: () => void; onGroups: () => void; onSimulate: () => void;
   onPay: (p: PendingItem) => void; onFund: (categoryId: string) => void; today: Date;
+  onForecast: (action: 'yes' | 'no' | 'other' | 'undo', f: ForecastItem) => void; onEditTx: (txId: string) => void;
 }) {
-  const pending = useMemo(() => (month === monthKey(today) ? pendingItems(state, today) : []), [state, month, today]);
+  const pending = useMemo(() => (month === monthKey(today) ? pendingItems(state, today, 7, true) : []), [state, month, today]);
+  const forecast = useMemo(() => (month === monthKey(today) ? todayForecast(state, today) : []), [state, month, today]);
   const [showAll, setShowAll] = useState(false);
   const [view, setView] = useState<'cards' | 'groups'>('cards');
   const groupColor = useMemo(() => new Map((state.groups ?? []).map((g) => [g.id, g.color])), [state.groups]);
@@ -80,11 +82,46 @@ export function BudgetScreen({
         </div>
       )}
 
+      {/* Prévision du jour : Oui / Non / Autre montant */}
+      {forecast.length > 0 && (
+        <section className="card p-3">
+          <div className="flex items-center justify-between px-1 pb-1">
+            <h3 className="text-[14px] font-bold">Prévision du jour</h3>
+            <span className="text-[11.5px] text-muted">prévu <Money v={forecast.reduce((a, f) => a + f.planned, 0)} /></span>
+          </div>
+          {forecast.map((f) => (
+            <div key={f.key} className="border-t border-line px-1 py-2 first-of-type:border-0">
+              <div className="flex items-center gap-3">
+                <Glyph icon={f.icon} logo={f.logo} label={f.name} size={38} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13.5px] font-semibold">{f.name}</span>
+                  <span className="block truncate text-[11.5px] text-muted">
+                    {f.status === 'done' ? <span className="font-semibold text-ok">✓ Dépensé <Money v={f.spent} />{f.spent !== f.planned ? <span className="font-normal text-muted"> / {fmt(f.planned)}</span> : null}</span>
+                      : f.status === 'skipped' ? 'Non dépensé aujourd’hui'
+                      : <>Prévu <Money v={f.planned} /></>}
+                  </span>
+                </span>
+                {f.status === 'done' && <button onClick={() => onEditTx(f.txIds[0])} className="shrink-0 rounded-xl bg-surface2 px-3 py-1.5 text-[12px] font-bold text-primary">Modifier</button>}
+                {f.status === 'skipped' && <button onClick={() => onForecast('undo', f)} className="shrink-0 rounded-xl bg-surface2 px-3 py-1.5 text-[12px] font-bold text-muted">Annuler</button>}
+              </div>
+              {f.status === 'todo' && (
+                <div className="mt-2 grid grid-cols-3 gap-1.5 pl-[50px]">
+                  <button onClick={() => onForecast('yes', f)} className="flex items-center justify-center gap-1 rounded-xl bg-primary py-2 text-[12.5px] font-bold text-onprimary active:scale-95"><LuCheck size={15} strokeWidth={3} /> Oui</button>
+                  <button onClick={() => onForecast('no', f)} className="rounded-xl bg-surface2 py-2 text-[12.5px] font-bold active:scale-95">Non</button>
+                  <button onClick={() => onForecast('other', f)} className="flex items-center justify-center gap-1 rounded-xl bg-surface2 py-2 text-[12.5px] font-bold text-primary active:scale-95"><LuPencil size={13} /> Montant</button>
+                </div>
+              )}
+            </div>
+          ))}
+          <p className="mt-1 px-1 text-[11px] text-muted">Dépensé ? <b>Oui</b> = le montant prévu, <b>Non</b> = rien aujourd’hui, <b>Montant</b> = un autre montant.</p>
+        </section>
+      )}
+
       {/* À régler : un geste pour dire « c'est payé » */}
       {pending.length > 0 && (
         <section className="card p-3">
           <div className="flex items-center justify-between px-1 pb-1">
-            <h3 className="text-[14px] font-bold">À régler</h3>
+            <h3 className="text-[14px] font-bold">À régler (retards et à venir)</h3>
             <span className="text-[11.5px] text-muted">{pending.length} · <Money v={pending.reduce((a, p) => a + p.amount, 0)} /></span>
           </div>
           {(showAll ? pending : pending.slice(0, 4)).map((p) => (

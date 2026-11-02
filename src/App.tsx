@@ -1,8 +1,8 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LuCalendarDays, LuChartColumn, LuChartPie, LuEye, LuEyeOff, LuLock, LuPlus, LuSettings, LuTarget, LuWallet } from 'react-icons/lu';
-import type { PendingItem, ScenarioItem, Tx } from './engine';
-import { computeMonth, monthKey, setMaskAmounts, toCSV, toISODate } from './engine';
-import { PaySheet, type PayTarget } from './sheets/PaySheet';
+import type { ForecastItem, PendingItem, ScenarioItem, Tx } from './engine';
+import { computeMonth, envelopeShortfall, fmt, lockCheck, monthKey, setMaskAmounts, toCSV, toISODate } from './engine';
+import { PaySheet, usualWallet, type PayTarget } from './sheets/PaySheet';
 import { FundSheet, PlanSheet, type FundTarget } from './sheets/Envelope';
 import { LockScreen, PrivacySettings, useAppLock, useCodePrompt } from './sheets/Lock';
 import { resetReveals, setSecurity, useSecurity, type LockArea } from './services/security';
@@ -19,7 +19,7 @@ import { AddSheet, type AddMode } from './sheets/AddSheet';
 import { Welcome } from './sheets/Welcome';
 import { AccountSheet, STATUS_LABEL, SyncIcon } from './sheets/Account';
 import { useAccount } from './services/account';
-import { applyNativeReminders } from './services/reminders';
+import { applyNativeReminders, onExpenseAction } from './services/reminders';
 import { isNative } from './services/native';
 import { initBackButton, setRootBack } from './services/back';
 import { CategorySheet, EditTxSheet, RebalanceSheet, SettingsSheet, WalletSheet } from './sheets/Sheets';
@@ -78,6 +78,40 @@ export default function App() {
   };
   const onPayItem = (p: PendingItem) => (p.kind === 'goal' ? setContribId(p.refId) : setPay({ categoryId: p.refId, date: p.date, amount: p.amount, key: p.key, walletId: p.walletId }));
   const openUnlock = (goalId: string) => { go('goals'); setUnlockId(goalId); };
+
+  // « Oui, dépensé » en un geste : montant prévu, compte habituel. S'il y a un souci (argent bloqué,
+  // enveloppe insuffisante), on ouvre la fiche pour choisir.
+  const quickPay = (t: PayTarget) => {
+    const st = storeRef.current.state;
+    const date = t.date < toISODate(new Date()) ? t.date : toISODate(new Date());
+    const wallet = t.walletId ?? st.categories.find((c) => c.id === t.categoryId)?.sourceWalletId ?? usualWallet(storeRef.current, t.categoryId);
+    if (lockCheck(st, wallet, t.amount) || envelopeShortfall(st, t.categoryId, t.amount, date.slice(0, 7))) { setPay({ ...t, walletId: wallet }); return; }
+    const name = t.note || st.categories.find((c) => c.id === t.categoryId)?.name || 'Dépense';
+    const id = storeRef.current.addTx({ type: 'expense', amount: t.amount, date, categoryId: t.categoryId, walletId: wallet, note: t.note, planKey: t.key });
+    setToast({ msg: `${name} : ${fmt(t.amount)} XOF dépensé ✓`, ids: [id] });
+  };
+  const skipKey = (key: string, name: string) => {
+    storeRef.current.setAll((s) => ({ ...s, skipped: [...new Set([...(s.skipped ?? []), key])].slice(-2000) }));
+    setToast({ msg: `${name} : non dépensé aujourd’hui` });
+  };
+  const onForecast = (action: 'yes' | 'no' | 'other' | 'undo', f: ForecastItem) => {
+    const t: PayTarget = { categoryId: f.categoryId, date: toISODate(now), amount: Math.max(0, f.planned - f.spent), key: f.key, walletId: f.walletId, note: f.note };
+    if (action === 'yes') quickPay(t);
+    else if (action === 'no') skipKey(f.key, f.name);
+    else if (action === 'other') setPay(t);
+    else store.setAll((s) => ({ ...s, skipped: (s.skipped ?? []).filter((k) => k !== f.key) }));
+  };
+  const storeRef = useRef(store);
+  storeRef.current = store;
+  // Réponses données depuis les notifications (Oui / Non / Autre montant).
+  useEffect(() => onExpenseAction((a) => {
+    const t: PayTarget = { categoryId: a.categoryId, date: a.date, amount: a.amount, key: a.key, walletId: a.walletId, note: a.note };
+    const name = a.note || storeRef.current.state.categories.find((c) => c.id === a.categoryId)?.name || 'Dépense';
+    if (storeRef.current.state.txs.some((x) => x.planKey === a.key)) return; // déjà confirmé
+    if (a.action === 'oui') quickPay(t);
+    else if (a.action === 'non') skipKey(a.key, name);
+    else { setTab('budget'); setPay(t); }
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rafraîchit la date au retour sur l'app (changement de jour / de mois).
   useEffect(() => {
@@ -189,6 +223,8 @@ export default function App() {
               onSimulate={() => { setAnaTab('sim'); go('analysis'); }}
               onPay={onPayItem}
               onFund={(id) => setFund({ categoryId: id || undefined })}
+              onForecast={onForecast}
+              onEditTx={(id) => setEditTx(store.state.txs.find((x) => x.id === id) ?? null)}
               today={now}
             />
           )}

@@ -834,7 +834,7 @@ export const goalPlanned = (g: Goal, month: string) => (g.monthly && g.monthly >
  * Une échéance est réglée si une opération lui est liée (planKey), si elle est sautée,
  * ou — pour les opérations notées « à la main » — si la dépense de ce jour (ou du mois pour une charge mensuelle) la couvre.
  */
-export function pendingItems(state: State, today: Date, horizon = 7): PendingItem[] {
+export function pendingItems(state: State, today: Date, horizon = 7, excludeToday = false): PendingItem[] {
   const month = monthKey(today);
   const iso = toISODate(today);
   const last = toISODate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + horizon));
@@ -916,7 +916,7 @@ export function pendingItems(state: State, today: Date, horizon = 7): PendingIte
     }
   }
   const rank = { overdue: 0, today: 1, soon: 2 } as const;
-  return out.sort((a, b) => rank[a.status] - rank[b.status] || a.date.localeCompare(b.date) || Number(b.obligatory) - Number(a.obligatory));
+  return out.filter((i) => !(excludeToday && i.status === 'today' && i.kind !== 'goal')).sort((a, b) => rank[a.status] - rank[b.status] || a.date.localeCompare(b.date) || Number(b.obligatory) - Number(a.obligatory));
 }
 
 // ---------------------------------------------------------------------
@@ -1101,4 +1101,62 @@ export function walletFree(state: State, walletId: string, month: string) {
   const w = walletReports({ ...state, wallets: state.wallets.map((x) => ({ ...x, hidden: false })) }, '9999-12-31', month).find((x) => x.id === walletId);
   if (!w) return { balance: 0, locked: 0, reserved: 0, free: 0 };
   return { balance: w.balance, locked: w.locked, reserved: w.reservedBudget, free: w.balance - w.locked - w.reservedBudget };
+}
+
+// ---------------------------------------------------------------------
+// Prévision du jour : ce qui est prévu aujourd'hui, et ce qui a été confirmé
+// ---------------------------------------------------------------------
+export interface ForecastItem {
+  key: string;
+  kind: 'category' | 'planned';
+  categoryId: string;
+  name: string;
+  icon: string;
+  logo?: string;
+  /** Montant prévu aujourd'hui. */
+  planned: number;
+  /** Montant déjà noté pour cette prévision. */
+  spent: number;
+  status: 'todo' | 'done' | 'skipped';
+  /** Opérations liées (pour modifier le montant). */
+  txIds: string[];
+  walletId?: string;
+  note?: string;
+}
+
+/** Détail de ce qui est prévu aujourd'hui d'après les rythmes (jour, semaine, dates, mois) et les dépenses prévues. */
+export function todayForecast(state: State, today: Date): ForecastItem[] {
+  const month = monthKey(today);
+  const iso = toISODate(today);
+  const skipped = new Set(state.skipped ?? []);
+  const exp = state.txs.filter((t) => t.type === 'expense');
+  const out: ForecastItem[] = [];
+  for (const c of state.categories) {
+    if (c.hidden) continue;
+    const o = occurrences(c, month).find((x) => x.day === today.getDate());
+    if (!o) continue;
+    const key = planKey(c.id, iso);
+    const linked = exp.filter((t) => t.planKey === key);
+    // Une dépense notée à la main le jour même dans l'enveloppe compte aussi.
+    const manual = exp.filter((t) => t.categoryId === c.id && !t.planKey && t.date === iso);
+    const all = [...linked, ...manual];
+    const spent = all.reduce((a, t) => a + t.amount, 0);
+    out.push({
+      key, kind: 'category', categoryId: c.id, name: c.name, icon: c.icon, logo: c.logo, planned: o.amount, spent,
+      status: spent > 0 ? 'done' : skipped.has(key) ? 'skipped' : 'todo', txIds: all.map((t) => t.id), walletId: c.sourceWalletId,
+    });
+  }
+  for (const pl of state.planned ?? []) {
+    if (pl.date !== iso) continue;
+    const key = plannedKey(pl.id);
+    const c = state.categories.find((x) => x.id === pl.categoryId);
+    const linked = exp.filter((t) => t.planKey === key);
+    const spent = linked.reduce((a, t) => a + t.amount, 0);
+    out.push({
+      key, kind: 'planned', categoryId: pl.categoryId, name: pl.note || c?.name || 'Dépense prévue', icon: c?.icon ?? 'tag', logo: c?.logo,
+      planned: pl.amount, spent, status: spent > 0 ? 'done' : skipped.has(key) ? 'skipped' : 'todo', txIds: linked.map((t) => t.id),
+      walletId: pl.walletId ?? c?.sourceWalletId, note: pl.note,
+    });
+  }
+  return out;
 }

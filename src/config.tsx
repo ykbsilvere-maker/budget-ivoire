@@ -31,6 +31,13 @@ export function Logo({ size = 36 }: { size?: number }) {
 
 /** Nouveautés affichées dans Réglages › À propos (la plus récente en premier). */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
+  { version: '1.6', date: '2 novembre 2026', items: [
+    '« Prévision du jour » : le détail de ce qui est prévu aujourd’hui selon tes rythmes (ex. Transport 10 000)',
+    'Pour chaque ligne : Oui (montant prévu), Non (rien aujourd’hui) ou un autre montant ; Modifier après coup',
+    'Rappels avec boutons « Oui, dépensé », « Non », « Autre montant » directement dans la notification',
+    'Rappel du soir avec le détail de la prévision du jour',
+    'Choisir un rythme semaine / jour / dates active le rappel de ces jours-là',
+  ] },
   { version: '1.5', date: '2 novembre 2026', items: [
     'Masquage compte par compte (et du patrimoine) : l’écran reste affiché, le code ou l’empreinte montre le montant',
     'Onglets protégés : visibles, montants masqués jusqu’au code',

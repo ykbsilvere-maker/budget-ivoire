@@ -505,7 +505,7 @@ function RhythmEditor({ c, setC, store }: { c: Category; setC: (c: Category) => 
   return (
     <>
       <Label>Rythme de dépense</Label>
-      <Segmented small value={plan.freq} onChange={(f) => set({ freq: f, weekdays: f === 'weekly' && !plan.weekdays?.length ? [1] : plan.weekdays })}
+      <Segmented small value={plan.freq} onChange={(f) => set({ freq: f, weekdays: f === 'weekly' && !plan.weekdays?.length ? [1] : plan.weekdays, remind: f !== 'monthly' && c.plan?.freq !== f ? true : plan.remind })}
         options={[{ value: 'monthly', label: 'Mois' }, { value: 'weekly', label: 'Semaine' }, { value: 'daily', label: 'Jour' }, { value: 'dates', label: 'Dates' }]} />
       {plan.freq === 'monthly' && (
         <div className="mt-2 flex items-center gap-2 text-[13px]">

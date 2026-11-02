@@ -325,3 +325,25 @@ test('dépense prévue sur une date : dans « À régler » jusqu’au paiement'
   s.txs.push(tx({ amount: 25000, categoryId: 'c_gifts', walletId: 'w_om', date: '2026-11-14', planKey: plannedKey('p1') }));
   assert.ok(!pendingItems(s, today).some((i) => i.kind === 'planned'));
 });
+
+test('prévision du jour : oui / non / autre montant', async () => {
+  const { todayForecast, planKey } = await import('./engine');
+  const s = blank();
+  const today = new Date(2026, 10, 2); // lundi 2 novembre
+  s.categories = s.categories.map((c) =>
+    c.id === 'c_transport' ? { ...c, budget: 300000, plan: { freq: 'daily' as const } } :
+    c.id === 'c_food' ? { ...c, budget: 40000, plan: { freq: 'weekly' as const, weekdays: [1] } } : c);
+  let f = todayForecast(s, today);
+  const tr = f.find((i) => i.categoryId === 'c_transport')!;
+  assert.equal(tr.planned, 10000); // 300 000 / 30 jours
+  assert.equal(tr.status, 'todo');
+  assert.ok(f.some((i) => i.categoryId === 'c_food')); // lundi = jour choisi
+  // Oui (montant prévu), Non (sauté), Autre montant
+  s.txs.push(tx({ id: 'oui', amount: 10000, categoryId: 'c_transport', walletId: 'w_cash', date: '2026-11-02', planKey: planKey('c_transport', '2026-11-02') }));
+  s.skipped = [planKey('c_food', '2026-11-02')];
+  f = todayForecast(s, today);
+  assert.deepEqual(f.find((i) => i.categoryId === 'c_transport')!.txIds, ['oui']);
+  assert.equal(f.find((i) => i.categoryId === 'c_transport')!.status, 'done');
+  assert.equal(f.find((i) => i.categoryId === 'c_food')!.status, 'skipped');
+  assert.ok(!f.some((i) => i.categoryId === 'c_rent')); // le loyer tombe le 5
+});

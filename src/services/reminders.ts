@@ -1,14 +1,17 @@
 // Rappels : notifications du téléphone (APK) et ajout au calendrier (Google Agenda, fichier .ics).
 import { LocalNotifications } from '@capacitor/local-notifications';
 import type { Category, ReminderSettings, State } from '../engine';
-import { WEEKDAYS_FR, daysIn, goalPlanned, fmt, fmtN, monthKey, occurrences, pad, planOf, shiftMonth } from '../engine';
+import { WEEKDAYS_FR, daysIn, goalPlanned, todayForecast, fmt, fmtN, monthKey, occurrences, pad, planOf, shiftMonth } from '../engine';
 import { APP } from '../config';
 import { isNative } from './native';
 
 export const DEFAULT_REMINDERS: ReminderSettings = { dailyLog: true, logTime: '20:00', dues: true, dueTime: '08:00', dayBefore: false };
 export const remindersOf = (s: State): ReminderSettings => ({ ...DEFAULT_REMINDERS, ...(s.settings.reminders ?? {}) });
 
-export interface PlannedReminder { id: number; at: Date; title: string; body: string }
+export interface PlannedReminder { id: number; at: Date; title: string; body: string; actionTypeId?: string; extra?: Record<string, unknown> }
+
+/** Boutons sous la notification d'une dépense prévue. */
+export const EXPENSE_ACTIONS = 'DEPENSE_PREVUE';
 
 const atTime = (d: Date, hhmm: string) => {
   const [h, m] = hhmm.split(':').map(Number);
@@ -24,7 +27,14 @@ export function buildSchedule(state: State, now: Date, days = 30): PlannedRemind
     for (let i = 0; i <= days; i++) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
       const at = atTime(d, r.logTime);
-      if (at > now) out.push({ id: 0, at, title: 'Tes dépenses du jour', body: 'Pense à noter ce que tu as dépensé aujourd’hui : quelques secondes suffisent.' });
+      if (at <= now) continue;
+      // Détail de la prévision du jour (ce qui n'est pas encore confirmé).
+      const items = todayForecast(state, d).filter((f) => f.status === 'todo');
+      const detail = items.slice(0, 5).map((f) => `${f.name} ${fmt(f.planned)}`).join(' · ');
+      out.push({
+        id: 0, at, title: items.length ? `Prévision du jour : ${fmt(items.reduce((a, f) => a + f.planned, 0))} XOF` : 'Tes dépenses du jour',
+        body: items.length ? `${detail}${items.length > 5 ? '…' : ''}. Dépensé ? Oui, non ou un autre montant : ouvre l’application.` : 'Pense à noter ce que tu as dépensé aujourd’hui : quelques secondes suffisent.',
+      });
     }
   }
   if (r.dues) {
@@ -39,11 +49,15 @@ export function buildSchedule(state: State, now: Date, days = 30): PlannedRemind
           if (r.dayBefore) d = new Date(y, mo - 1, o.day - 1);
           const at = atTime(d, r.dueTime);
           if (at <= now || at > end) continue;
+          const date = `${m}-${pad(o.day)}`;
+          const key = `${c.id}@${date}`;
+          if ((state.skipped ?? []).includes(key) || state.txs.some((t) => t.planKey === key)) continue;
           const fixed = c.kind === 'obligatory';
           out.push({
-            id: 0, at,
+            id: 0, at, actionTypeId: EXPENSE_ACTIONS,
+            extra: { key, categoryId: c.id, date, amount: o.amount, walletId: c.sourceWalletId ?? null },
             title: fixed ? `${c.name} : ${fmt(o.amount)} XOF à payer${r.dayBefore ? ' demain' : ' aujourd’hui'}` : `${c.name} : ${fmt(o.amount)} XOF prévus${r.dayBefore ? ' demain' : ''}`,
-            body: fixed ? 'Ta charge arrive à échéance. Une fois payée, touche « ✓ Payé » dans « À régler ».' : 'Ton budget pour cette période. Note tes dépenses pour garder le cap.',
+            body: fixed ? 'Ta charge arrive à échéance. Payée ? Touche « Oui » ou « Autre montant ».' : 'Dépensé ? Touche « Oui », « Non » ou « Autre montant ».',
           });
         }
       }
@@ -56,10 +70,12 @@ export function buildSchedule(state: State, now: Date, days = 30): PlannedRemind
       const at = atTime(d, r.dueTime);
       if (at <= now || at > end) continue;
       const c = state.categories.find((x) => x.id === pl.categoryId);
+      if ((state.skipped ?? []).includes(`plan:${pl.id}`)) continue;
       out.push({
-        id: 0, at,
+        id: 0, at, actionTypeId: EXPENSE_ACTIONS,
+        extra: { key: `plan:${pl.id}`, categoryId: pl.categoryId, date: pl.date, amount: pl.amount, walletId: pl.walletId ?? null, note: pl.note ?? null },
         title: `${pl.note || c?.name || 'Dépense prévue'} : ${fmt(pl.amount)} XOF${r.dayBefore ? ' demain' : ' aujourd’hui'}`,
-        body: 'Dépense prévue. Une fois faite, touche « ✓ Payé » dans « À régler ».',
+        body: 'Dépense prévue. Faite ? Touche « Oui », « Non » ou « Autre montant ».',
       });
     }
     // Versements prévus pour les projets (objectifs)
@@ -101,10 +117,18 @@ export async function applyNativeReminders(state: State): Promise<number> {
   try { await LocalNotifications.createChannel({ id: 'rappels', name: 'Rappels du budget', importance: 4, description: 'Échéances et rappel quotidien' } as any); } catch { /* déjà créé */ }
   const pending = await LocalNotifications.getPending();
   if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
+  try {
+    await LocalNotifications.registerActionTypes({
+      types: [{ id: EXPENSE_ACTIONS, actions: [{ id: 'oui', title: '✓ Oui, dépensé' }, { id: 'non', title: 'Non' }, { id: 'autre', title: 'Autre montant' }] }],
+    } as any);
+  } catch { /* boutons indisponibles : la notification reste simple */ }
   const list = buildSchedule(state, new Date());
   if (!list.length) return 0;
   await LocalNotifications.schedule({
-    notifications: list.map((n) => ({ id: n.id, title: n.title, body: n.body, channelId: 'rappels', schedule: { at: n.at, allowWhileIdle: true } })),
+    notifications: list.map((n) => ({
+      id: n.id, title: n.title, body: n.body, channelId: 'rappels', schedule: { at: n.at, allowWhileIdle: true },
+      ...(n.actionTypeId ? { actionTypeId: n.actionTypeId, extra: n.extra } : {}),
+    })),
   } as any);
   return list.length;
 }
@@ -198,4 +222,19 @@ export function buildICS(state: State, now = new Date()): string {
   }
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');
+}
+
+export interface ExpenseAction { action: 'oui' | 'non' | 'autre'; key: string; categoryId: string; date: string; amount: number; walletId?: string; note?: string }
+
+/** Réponse donnée depuis une notification (boutons Oui / Non / Autre montant, ou simple toucher). */
+export function onExpenseAction(handler: (a: ExpenseAction) => void) {
+  if (!isNative()) return () => {};
+  let remove: (() => void) | undefined;
+  LocalNotifications.addListener('localNotificationActionPerformed', (e: any) => {
+    const x = e?.notification?.extra;
+    if (!x?.key || !x?.categoryId) return;
+    const action = e.actionId === 'oui' || e.actionId === 'non' ? e.actionId : 'autre';
+    handler({ action, key: x.key, categoryId: x.categoryId, date: x.date, amount: Number(x.amount) || 0, walletId: x.walletId ?? undefined, note: x.note ?? undefined });
+  }).then((h: any) => { remove = () => h.remove(); }).catch(() => {});
+  return () => remove?.();
 }
