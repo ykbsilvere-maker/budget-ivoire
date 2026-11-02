@@ -2,6 +2,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { TextZoom } from '@capacitor/text-zoom';
 
 export const isNative = () => {
   try { return Capacitor.isNativePlatform(); } catch { return false; }
@@ -28,4 +29,13 @@ export async function saveFile(name: string, content: string, mime: string) {
 export function openExternal(url: string) {
   if (isNative()) window.location.href = url; // l'APK confie les liens externes au système
   else window.open(url, '_blank', 'noopener');
+}
+
+/** Limite l'agrandissement des textes imposé par Android (au-delà, les cases débordent). */
+export async function limitTextZoom(max = 1.15) {
+  if (!isNative()) return;
+  try {
+    const { value } = await TextZoom.getPreferred();
+    await TextZoom.set({ value: Math.min(Math.max(value, 0.85), max) });
+  } catch { /* module absent : on garde le réglage du téléphone */ }
 }

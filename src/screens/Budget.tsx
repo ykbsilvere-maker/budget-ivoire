@@ -39,14 +39,14 @@ export function BudgetScreen({
       </div>
 
       {/* Anneau : ce qui est dépensé par groupe, ce qui reste */}
-      <section className="card flex items-center gap-4 p-4">
-        <AllocRing income={base} segments={spentSegs} big={fmtK(r.resteAVivre) + ' XOF'} small="reste à vivre" size={142} stroke={14} />
-        <div className="min-w-0 flex-1 space-y-2.5">
+      <section className="card flex items-center gap-3 p-3.5">
+        <AllocRing income={base} segments={spentSegs} big={fmtK(r.resteAVivre)} unit="XOF" small="reste à vivre" size={128} stroke={13} />
+        <div className="min-w-0 flex-1 space-y-2">
           <Stat label="Dépensé" value={r.spent} pct={(r.spent / base) * 100} />
           <Stat label="Épargné" value={savings} pct={(savings / base) * 100} />
           <div>
-            <div className="text-[11.5px] text-muted">Par jour, jusqu’à la fin du mois</div>
-            <div className="num text-[16px] font-extrabold">≈ {fmt(r.dailyAllowance)} XOF</div>
+            <div className="text-[11.5px] leading-tight text-muted">Par jour, d’ici la fin du mois</div>
+            <Money v={r.dailyAllowance} className="block text-[16px] font-extrabold leading-tight" />
           </div>
         </div>
       </section>
@@ -85,7 +85,7 @@ export function BudgetScreen({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13.5px] font-semibold">{t.name}</span>
                 <span className="block text-[11.5px] text-muted">
-                  {t.kind === 'obligatory' ? 'À payer' : 'Budget du jour'} : {fmt(t.amount)} XOF{t.done > 0 ? ` · déjà noté ${fmt(t.done)} XOF` : ''}
+                  {t.kind === 'obligatory' ? 'À payer' : 'Prévu'} : {fmt(t.amount)} XOF{t.done > 0 ? ` · noté ${fmt(t.done)}` : ''}
                 </span>
               </span>
               {t.done >= t.amount
@@ -109,11 +109,11 @@ export function BudgetScreen({
                   <Glyph icon={g.icon} size={40} plain />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-[14.5px] font-bold">{g.name}</span>
-                    <span className="num shrink-0 text-[13px]"><b className={cx(g.spent > g.budget && g.budget > 0 && 'text-danger')}>{fmt(g.spent)}</b><span className="text-muted"> / {fmt(g.budget)} XOF</span></span>
-                  </span>
+                  <span className="block truncate text-[14.5px] font-bold leading-tight">{g.name}</span>
                   <span className="mt-1.5 block"><Bar pct={pct} color={pct > 100 ? '#D64545' : g.color} h={5} /></span>
+                  <span className="num mt-1 block text-[12px] text-muted">
+                    <b className={cx('text-ink', g.spent > g.budget && g.budget > 0 && 'text-danger')}>{fmt(g.spent)}</b> / {fmt(g.budget)} XOF
+                  </span>
                 </span>
                 <LuChevronDown className={cx('shrink-0 text-muted transition', isOpen && 'rotate-180')} />
               </button>
@@ -124,7 +124,7 @@ export function BudgetScreen({
                       <div className="mb-1 flex items-center gap-2 text-[13px]">
                         <Glyph icon={c.icon} logo={c.logo} label={c.name} size={24} />
                         <span className="min-w-0 flex-1 truncate font-semibold">{c.name}</span>
-                        <span className="num text-[12px] text-muted"><b className="text-ink">{fmt(c.spent)}</b> / {fmt(c.budget)}</span>
+                        <span className="num shrink-0 whitespace-nowrap text-[12px] text-muted"><b className="text-ink">{fmtK(c.spent)}</b> / {fmtK(c.budget)}</span>
                       </div>
                       <Bar pct={c.pct} color={c.status === 'ok' ? g.color : STATUS_COLOR[c.status]} h={4} />
                       {(() => {

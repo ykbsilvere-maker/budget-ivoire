@@ -1,6 +1,11 @@
-## Budget Ivoire 1.3 — 2 novembre 2026
+## Budget Ivoire 1.3.1 — 2 novembre 2026
 
 **Installer :** ouvrez `budget-ivoire.apk` sur votre téléphone Android et autorisez « Installer des applications inconnues ». Une version déjà installée est mise à jour, vos données sont conservées.
+
+### Corrigé en 1.3.1
+- Textes et montants qui ne débordent plus des cases, même sur petit écran
+- Noms des groupes affichés en entier, montants sous la barre
+- Agrandissement des textes par Android limité (+15 % au maximum) pour garder une mise en page propre
 
 ### Nouveautés 1.3
 - Numéro de version et nouveautés visibles dans Réglages › À propos

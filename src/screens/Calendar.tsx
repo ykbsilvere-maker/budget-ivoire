@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { LuChevronLeft, LuChevronRight, LuSearch, LuPlus } from 'react-icons/lu';
 import type { MonthReport, State, Tx } from '../engine';
-import { daysIn, fmt, fromISO, monthDues, pad, shiftMonth, toISODate } from '../engine';
+import { daysIn, fmt, fmtK, fromISO, monthDues, pad, shiftMonth, toISODate } from '../engine';
 import { Empty, Money, Segmented, cx, inputCls } from '../ui';
 import { Glyph } from '../icons';
 
@@ -95,14 +95,14 @@ export function CalendarScreen({
         <button onClick={() => go(-1)} className="grid h-10 w-10 place-items-center rounded-2xl bg-surface2" aria-label="Mois précédent"><LuChevronLeft /></button>
         <div className="text-center">
           <div className="text-[17px] font-bold capitalize">{monthLabel}</div>
-          <div className="text-[11.5px] text-muted">Dépensé <b className="text-ink">{fmt(r.spent)} XOF</b> · repère {fmt(dailyRef)} XOF/j</div>
+          <div className="text-[11.5px] leading-tight text-muted">Dépensé <b className="text-ink">{fmtK(r.spent)} XOF</b> · repère {fmtK(dailyRef)}/jour</div>
         </div>
         <button onClick={() => go(1)} className="grid h-10 w-10 place-items-center rounded-2xl bg-surface2" aria-label="Mois suivant"><LuChevronRight /></button>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <div className="card px-3 py-2"><div className="text-[11px] text-muted">Dépensé</div><div className="num text-[17px] font-extrabold">{fmt(r.spent)} XOF <span className="text-[12px] font-semibold text-muted">{Math.round((r.spent / base) * 100)} %</span></div></div>
-        <div className="card px-3 py-2"><div className="text-[11px] text-muted">Épargne</div><div className="num text-[17px] font-extrabold text-primary">{fmt(r.savingsDone)} XOF <span className="text-[12px] font-semibold text-muted">{Math.round((r.savingsDone / base) * 100)} %</span></div></div>
+        <div className="card px-3 py-2"><div className="flex justify-between text-[11px] text-muted"><span>Dépensé</span><span>{Math.round((r.spent / base) * 100)} %</span></div><Money v={r.spent} className="block text-[16px] font-extrabold" /></div>
+        <div className="card px-3 py-2"><div className="flex justify-between text-[11px] text-muted"><span>Épargne</span><span>{Math.round((r.savingsDone / base) * 100)} %</span></div><Money v={r.savingsDone} className="block text-[16px] font-extrabold text-primary" /></div>
       </div>
 
       <Segmented value={view} onChange={setView} small options={[{ value: 'month', label: 'Calendrier' }, { value: 'list', label: 'Chronologie' }]} />
@@ -186,8 +186,8 @@ export function CalendarScreen({
                 <div key={d.categoryId} className="flex items-center gap-3 border-t border-line px-1 py-2 first-of-type:border-0">
                   <span className="grid h-8 w-8 place-items-center rounded-lg text-white" style={{ background: d.color }}><Glyph icon={d.icon} label={d.name} size={32} plain /></span>
                   <span className="flex-1 text-[13.5px] font-semibold">{d.name}</span>
-                  <span className="text-[12px] text-muted">le {d.day}</span>
-                  <b className="num w-24 text-right text-[13.5px]">{fmt(d.amount)} XOF</b>
+                  <span className="whitespace-nowrap text-[12px] text-muted">le {d.day}</span>
+                  <Money v={d.amount} className="text-right text-[13.5px] font-bold" />
                 </div>
               ))}
             </div>

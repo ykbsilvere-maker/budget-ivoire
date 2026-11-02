@@ -31,6 +31,11 @@ export function Logo({ size = 36 }: { size?: number }) {
 
 /** Nouveautés affichées dans Réglages › À propos (la plus récente en premier). */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
+  { version: '1.3.1', date: '2 novembre 2026', items: [
+    'Textes et montants qui ne débordent plus des cases, même sur petit écran',
+    'Noms des groupes en entier, montants sous la barre',
+    'Agrandissement des textes par Android limité pour garder une mise en page propre',
+  ] },
   { version: '1.3', date: '2 novembre 2026', items: [
     'Numéro de version et nouveautés visibles dans les réglages',
     'Version Android mise à jour automatiquement à chaque compilation',

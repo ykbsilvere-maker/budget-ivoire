@@ -26,16 +26,16 @@ export function MoneyScreen({
     <div className="flex flex-col gap-3">
       <section className="pt-1 text-center">
         <div className="text-[12px] font-semibold uppercase tracking-wider text-muted">Mon patrimoine</div>
-        <Money v={r.netWorth} className="block text-[34px] font-extrabold" />
-        <div className="mt-1 flex justify-center gap-2 text-[12px]">
-          <span className="rounded-full bg-surface2 px-3 py-1">Disponible <b className="num">{fmt(r.totalCash)} XOF</b></span>
-          <span className="rounded-full bg-surface2 px-3 py-1">Reste à vivre <b className="num">{fmt(r.resteAVivre)} XOF</b></span>
+        <Money v={r.netWorth} className="block text-[28px] min-[380px]:text-[34px] font-extrabold" />
+        <div className="mt-2 grid grid-cols-2 gap-2 text-left">
+          <div className="rounded-2xl bg-surface2 px-3 py-2"><div className="text-[11px] text-muted">Disponible</div><Money v={r.totalCash} className="block text-[15px] font-bold" /></div>
+          <div className="rounded-2xl bg-surface2 px-3 py-2"><div className="text-[11px] text-muted">Reste à vivre</div><Money v={r.resteAVivre} className="block text-[15px] font-bold" /></div>
         </div>
       </section>
 
       <div className="grid grid-cols-2 gap-2">
         <Btn onClick={onTransfer}><LuArrowLeftRight /> Transférer</Btn>
-        <Btn variant="ghost" onClick={onAddWallet}><LuPlus /> Ajouter un compte</Btn>
+        <Btn variant="ghost" onClick={onAddWallet}><LuPlus /> Compte</Btn>
       </div>
 
       <h3 className="mt-1 text-[13px] font-bold uppercase tracking-wide text-muted">Comptes & Mobile Money</h3>
@@ -77,7 +77,7 @@ function WalletCard({ w, color, onClick }: { w: WalletReport; color: string; onC
         <span className="truncate text-[12.5px] font-semibold">{w.name}</span>
       </span>
       <span>
-        <span className={cx('num block text-[19px] font-extrabold leading-tight', w.balance < 0 && 'text-[#FFC9C9]')}>{fmt(w.balance)} XOF</span>
+        <span className={cx('num block whitespace-nowrap text-[16px] min-[380px]:text-[19px] font-extrabold leading-tight', w.balance < 0 && 'text-[#FFC9C9]')}>{fmt(w.balance)}<span className="ml-1 text-[0.6em] opacity-80">XOF</span></span>
         <span className="block text-[10px] opacity-75">{w.source === 'declared' ? 'Solde déclaré' : 'Synchronisé'}</span>
       </span>
     </button>

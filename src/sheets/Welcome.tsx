@@ -115,7 +115,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
         <Logo size={44} />
         <div className="mt-3 text-[13px] font-semibold text-muted">Bienvenue sur {APP.name}</div>
         <h1 className="mt-1 text-[22px] font-extrabold leading-tight">Pour commencer,<br />inscris ton revenu du mois</h1>
-        <div className="mt-5"><AllocRing income={Math.max(income, 1)} segments={[]} big={fmt(income) + ' XOF'} small="par mois" size={190} /></div>
+        <div className="mt-5"><AllocRing income={Math.max(income, 1)} segments={[]} big={fmt(income)} unit="XOF" small="par mois" size={190} /></div>
         {onLogin && (
           <button onClick={onLogin} className="mt-3 rounded-full bg-surface2 px-4 py-2 text-[13px] font-semibold text-primary">
             J’ai déjà un compte · me reconnecter
@@ -145,7 +145,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
     body = (
       <>
         <StepIcons steps={catSteps} current={key} amounts={amounts} state={state} />
-        <div className="mt-2 flex justify-center"><AllocRing income={income} segments={segments} big={fmt(restant) + ' XOF'} small="restant" size={150} /></div>
+        <div className="mt-2 flex justify-center"><AllocRing income={income} segments={segments} big={fmt(restant)} unit="XOF" small="restant" size={150} /></div>
         <div className="card mt-3 p-4">
           <div className="flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-xl text-white" style={{ background: groupColor(gid) }}>
@@ -157,7 +157,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
             </div>
             <button onClick={() => { setAmounts({ ...amounts, [key]: 0 }); next(); }} className="rounded-full bg-surface2 px-3 py-1 text-[12px] font-semibold text-muted">Passer</button>
           </div>
-          <button onClick={() => setPhase('amount')} className={cx('mx-auto mt-3 block rounded-2xl px-5 py-2 num text-[32px] font-extrabold', phase === 'amount' ? 'bg-surface2' : '')}
+          <button onClick={() => setPhase('amount')} className={cx('mx-auto mt-3 block max-w-full whitespace-nowrap rounded-2xl px-4 py-2 num text-[26px] min-[380px]:text-[32px] font-extrabold', phase === 'amount' ? 'bg-surface2' : '')}
             style={{ color: value ? groupColor(gid) : 'var(--s-muted)' }}>
             {fmt(value)} XOF
           </button>
@@ -194,7 +194,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
     body = (
       <>
         <StepIcons steps={catSteps} current="subs" amounts={amounts} state={state} />
-        <div className="mt-2 flex justify-center"><AllocRing income={income} segments={segments} big={fmt(restant) + ' XOF'} small="restant" size={150} /></div>
+        <div className="mt-2 flex justify-center"><AllocRing income={income} segments={segments} big={fmt(restant)} unit="XOF" small="restant" size={150} /></div>
         <div className="card mt-3 p-4">
           <div className="flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-xl text-white" style={{ background: groupColor('g_subs') }}>
@@ -227,7 +227,7 @@ export function Welcome({ store, onDone, onLogin }: { store: Store; onDone: () =
         <h1 className="pt-2 text-[22px] font-extrabold">Ton budget est prêt 🎉</h1>
         <p className="mt-1 text-[13px] text-muted">Voici comment ton revenu est réparti chaque mois.</p>
         <div className="mt-4 flex justify-center">
-          <AllocRing income={income} segments={segments} big={fmt(restant) + ' XOF'} small={restant >= 0 ? 'libre chaque mois' : 'à trouver'} size={210} stroke={22} />
+          <AllocRing income={income} segments={segments} big={fmt(restant)} unit="XOF" small={restant >= 0 ? 'libre chaque mois' : 'à trouver'} size={210} stroke={22} />
         </div>
         <div className="mt-4 space-y-1.5 text-left">
           {segments.map((g) => (
@@ -314,9 +314,12 @@ export function Keypad({ value, onChange }: { value: number; onChange: (v: numbe
 }
 
 /** Anneau du revenu : segments colorés par groupe, montant restant au centre. */
-export function AllocRing({ income, segments, big, small, size = 160, stroke = 16 }: {
-  income: number; segments: { id: string; color: string; value: number }[]; big: string; small: string; size?: number; stroke?: number;
+export function AllocRing({ income, segments, big, small, size = 160, stroke = 16, unit }: {
+  income: number; segments: { id: string; color: string; value: number }[]; big: string; small: string; size?: number; stroke?: number; unit?: string;
 }) {
+  // Taille du chiffre adaptée à sa longueur pour toujours tenir dans l'anneau.
+  const inner = size - stroke * 2 - 12;
+  const fs = Math.min(size * 0.15, inner / Math.max(4, big.length * 0.62));
   const r = (size - stroke) / 2;
   const C = 2 * Math.PI * r;
   let acc = 0;
@@ -336,8 +339,9 @@ export function AllocRing({ income, segments, big, small, size = 160, stroke = 1
         })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className="num font-extrabold leading-none" style={{ fontSize: size * (big.length > 11 ? 0.115 : 0.14) }}>{big}</div>
-        <div className="mt-1 text-[12px] text-muted">{small}</div>
+        <div className="num whitespace-nowrap font-extrabold leading-none" style={{ fontSize: fs }}>{big}</div>
+        {unit && <div className="text-[11px] font-semibold leading-tight text-muted">{unit}</div>}
+        <div className="mt-0.5 px-2 text-center text-[11.5px] leading-tight text-muted">{small}</div>
       </div>
     </div>
   );

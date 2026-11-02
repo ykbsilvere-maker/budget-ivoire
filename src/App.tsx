@@ -104,7 +104,7 @@ export default function App() {
             </div>
           </div>
           <span className="flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-bold" style={{ background: h.soft, color: h.color }} title={r.healthReasons.join(' ')}>
-            <span className="h-2 w-2 rounded-full" style={{ background: h.color }} />{h.label}
+            <span className="h-2 w-2 rounded-full" style={{ background: h.color }} /><span className="max-[400px]:hidden">{h.label}</span>
           </span>
           <button onClick={() => setAccountOpen(true)} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface2" aria-label={`Compte : ${STATUS_LABEL[account.status]}`} title={STATUS_LABEL[account.status]}>
             <SyncIcon status={account.status} />

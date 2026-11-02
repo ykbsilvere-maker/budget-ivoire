@@ -2,10 +2,21 @@
   "compilerOptions": {
     "baseUrl": "..",
     "paths": {
-      "@capacitor/core": ["src/shims/capacitor.ts"],
-      "@capacitor/local-notifications": ["src/shims/capacitor.ts"],
-      "@capacitor/filesystem": ["src/shims/capacitor.ts"],
-      "@capacitor/share": ["src/shims/capacitor.ts"]
+      "@capacitor/core": [
+        "src/shims/capacitor.ts"
+      ],
+      "@capacitor/local-notifications": [
+        "src/shims/capacitor.ts"
+      ],
+      "@capacitor/filesystem": [
+        "src/shims/capacitor.ts"
+      ],
+      "@capacitor/share": [
+        "src/shims/capacitor.ts"
+      ],
+      "@capacitor/text-zoom": [
+        "src/shims/capacitor.ts"
+      ]
     }
   }
 }

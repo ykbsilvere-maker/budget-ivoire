@@ -12,3 +12,4 @@ export const Filesystem = { writeFile: notAvailable };
 export const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS' };
 export const Encoding = { UTF8: 'utf8' };
 export const Share = { share: notAvailable };
+export const TextZoom = { getPreferred: async () => ({ value: 1 }), get: async () => ({ value: 1 }), set: async () => {} };
